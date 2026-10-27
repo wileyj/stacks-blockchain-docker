@@ -81,6 +81,14 @@ On `chore/refactor`, nothing committed. Verified locally on the Linux host: shel
 
 Still open: commit `refactor/` (the harness job needs it); the owner's `sample.env` pin bump; then phase 1.
 
+## Phase 1: in progress (2026-10-27)
+
+Plan: four slices on `chore/refactor`, each with CI green.
+1. **`config` renderer (done):** `tools/config` (Go, go-toml v2). It renders `conf/<net>/Config.toml`/`Signer.toml` from the `*.sample` templates, `.env` and `*.overrides.toml`. Observers follow `COMPOSE_PROFILES`; `stacker` follows the signer profile; BTC RPC credentials are optional. Values are escaped. A missing signer key fails naming the variable. A hand-edited file is moved to `*.legacy` once. `Signer.toml` is 0600, and files are owned like `conf/`. The image is **built locally** by compose (owner choice); its build runs the unit tests, and its context is limited to sources + templates by `Dockerfile.dockerignore`.
+2. **Root `compose.yaml` (done, additive):** `name: stacks-blockchain-docker`; profiles `node`/`api`/`signer`/`proxy`; `config` → `config-check`/`signer-config-check`; healthchecks; `stop_grace_period`; per-service `environment:`; `conf/<net>/api.env` for `STACKS_CHAIN_ID`; data under `DATA_ROOT` / `*_DATA_DIR`; metrics on `METRICS_BIND_ADDR` (127.0.0.1). Container and network names are kept. `sample.env` gains `COMPOSE_PROFILES=node,api` and commented data/metrics settings. CI: root compose in the config matrix (38 combinations) and a compose-only boot job. See 15 "Phase 1 root compose.yaml" for the three dependency and healthcheck fixes found while testing.
+3. **Next:** switch `manage.sh` to wrap the root project, remove mocknet and `compose-files/`, re-record the goldens with reviewed deltas. Open points: `EXPOSE_POSTGRES` (an optional override file), and the BNS/event-replay jobs (slice 4).
+4. **Then:** jobs (BNS, event replay) and docs.
+
 ## Resuming on another machine
 1. Get `refactor/` there. The owner can commit and push the branch, or copy just the folder: `tar czf refactor.tgz refactor/`, then `scp` it and untar it in the clone (branch `chore/refactor` @ `d2e558c`).
 2. Optionally copy the memory files (`MEMORY.md`, `refactor-plan-priorities.md`) into the new machine's `~/.claude/projects/<path-slug>/memory/`.

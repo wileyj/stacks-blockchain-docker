@@ -52,5 +52,16 @@ for network in "${CF}"/networks/*.yaml; do
 	done
 done
 
+# Root compose.yaml (plain `docker compose` path): every network x profile set, as COMPOSE_PROFILES
+# in .env would select them; '*' is what `docker compose --profile '*' down` loads
+for n in mainnet testnet; do
+	export NETWORK="${n}"
+	for profiles in node api node,api node,api,signer node,api,signer,proxy signer '*'; do
+		export COMPOSE_PROFILES="${profiles}"
+		check "root ${n} ${profiles}" -f "${REPO}/compose.yaml"
+	done
+done
+unset COMPOSE_PROFILES
+
 echo "${total} combinations, ${fail} failed"
 [ "${fail}" -eq 0 ]

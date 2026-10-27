@@ -57,3 +57,20 @@ jobs:
       ## Asserts "starts and stays up without panics/restarts", not sync: the testnet BTC peer is slow
       - name: boot and hold 180s
         run: .github/ci/boot-smoke.sh ${{ matrix.network }} 180
+
+  ## Plain `docker compose` from the repo root, no manage.sh (refactor/14 §2.1 R7). Also builds the
+  ## config renderer image, which runs its unit tests during the build.
+  compose-boot:
+    name: compose-only boot (${{ matrix.network }} ${{ matrix.profiles }})
+    needs: [static]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {network: testnet, profiles: "node,api"}
+          - {network: mainnet, profiles: "node"}
+    steps:
+      - uses: actions/checkout@v5
+      - name: docker compose up -d, hold 180s, docker compose --profile '*' down
+        run: .github/ci/compose-boot.sh ${{ matrix.network }} ${{ matrix.profiles }} 180

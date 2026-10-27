@@ -114,7 +114,7 @@ Setup:
 | Bitcoin header sync (973 261 headers) | About 60 s from container start with a LAN peer, versus more than 5 min, with dropped connections, against `bitcoin.mainnet.stacks.org` (5f) |
 | Time to first RPC (`/v2/info`) and `/metrics` | **2 min 05 s** after `up`: header sync, then MARF genesis (335 331 insertions), then p2p/RPC/metrics bind |
 | Time to first Stacks block | First outbound peers appeared within about 30 s of RPC coming up; tip ≈ 100 blocks after another 30 s, then about 100 blocks per 30 s in the genesis era |
-| API 9.7.0 | `/extended` → `status: ready` before the node was up; ingested along with the node (API height = node tip = 342 at check time). `/metrics` on 9153 serves 61 families |
+| API 9.7.0 | `/extended` → `status: ready` (checked after the node's RPC was up: **corrected 2026-10-26**, the API serves HTTP only once the node's RPC answers; see "Phase 1 compose"); ingested along with the node (API height = node tip = 342 at check time). `/metrics` on 9153 serves 61 families |
 
 Node metric families seen **[V]**:
 - Present at RPC-up (11 families): `stacks_node_stacks_tip_height`, `stacks_node_burn_block_height`, `stacks_node_neighbors_inbound`, `stacks_node_neighbors_outbound`, `stacks_node_btc_blocks_received_total`, `stacks_node_bandwidth_inbound`, `stacks_node_bandwidth_outbound`, `stacks_node_rpc_bandwidth_inbound`, `stacks_node_rpc_bandwidth_outbound`, `stacks_node_rpc_requests_total`, `stacks_node_rpc_call_latencies_histogram`.
@@ -329,6 +329,22 @@ Not covered: the running check against live containers (it would need the fixed 
 
 Test note: Compose's `ports: !reset [...]` **ignores the given value** and leaves no ports; use `!override [...]` to replace them. The CI boot script only uses `!reset []`, which is correct.
 
+### Phase 1 root `compose.yaml` — Linux x64, 2026-10-27 [V]
+
+Plain `docker compose` from a repo copy (`.github/ci/compose-boot.sh`, project `sbd-compose` with renamed containers), using the `config` renderer job (`tools/config`).
+
+| Run | Result |
+|---|---|
+| testnet `node,api`, 180 s | PASS: `config` + `config-check` exit 0; postgres healthy; API and node running, still in their start period (slow testnet BTC peer); `down` 3 s |
+| mainnet `node,api,signer,proxy` with the LAN BTC peer, 420 s | First run: node health stayed `starting`, and `down` took **1212 s**. After the fixes below, **all five services healthy** and `down` took **14 s** |
+
+Findings:
+- **API 9.7.0 opens its event port (3700) at once but serves HTTP (3999) only after the node's RPC answers.** It retries `/v2/info` every 60 s. So the node must not wait for the API to be *healthy*; that deadlocked `up` until the API's healthcheck gave up (about 3 min) and Compose started the node anyway, since the dependency was optional. Fix: the node depends on the API with `service_started`, and the API healthcheck has the node's 600 s start period. This also corrects P1's "ready before the node was up".
+- **stacks-node 4.0.4 answers `GET /v2/info HTTP/1.0` without a `Host` header with `400`.** The healthcheck in the reproduction notes (verified on 4.0.1) never passed on 4.0.4. Fixed with HTTP/1.1 plus `Host`.
+- **Shutdown order with a signer:** `down` stops dependents first. With the signer depending on the node, the signer stopped first, and the node then retried deliveries to the missing signer observer until it was killed at `stop_grace_period` (1200 s). This is the D46 mechanism applied to shutdown. Fix: **every observer outlives the node.** The node depends on the API and on the signer (`service_started`, `required: false`), so they start first and stop last. The signer retries until the node's RPC answers (P4). A graceful SIGTERM of a syncing mainnet node took 4 s.
+- `scripts/postgres-initdb.sh` needs `PG_USER`/`PG_DATABASE`/`PG_SCHEMA`. These came from `env_file: .env` before; they are now in the postgres `environment:` allow-list.
+- `config-check` and `signer-config-check` (pinned images) passed for every profile set, and the renderer's own tests run during its image build.
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |
@@ -341,7 +357,7 @@ Test note: Compose's `ports: !reset [...]` **ignores the given value** and leave
 ## Reproduction notes
 
 - **Healthcheck commands that worked:**
-  - node (bash, no curl): `bash -c 'exec 3<>/dev/tcp/127.0.0.1/20443 && printf "GET /v2/info HTTP/1.0\r\n\r\n" >&3 && head -1 <&3 | grep -q " 200 "'`
+  - node (bash, no curl): `bash -c 'exec 3<>/dev/tcp/127.0.0.1/20443 && printf "GET /v2/info HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && head -1 <&3 | grep -q " 200 "'`. **Corrected 2026-10-26:** stacks-node 4.0.4 answers the earlier HTTP/1.0 request without `Host` with `400 Bad Request`
   - API: `node -e "fetch('http://127.0.0.1:3999/extended/v1/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`
   - postgres: `pg_isready -U postgres`
 - **Config validation:** `stacks-node check-config --config <file>` and `stacks-signer check-config --config <file>` exit non-zero on unknown fields, which makes them suitable for the `config` job and CI.

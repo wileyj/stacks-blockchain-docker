@@ -7,8 +7,15 @@ pin() { sed -n "s/^${1}=//p" "${REPO}/sample.env" | tail -1; }
 # Throwaway signer key, valid secp256k1 scalar; only used to render a checkable Signer.toml
 TEST_SIGNER_KEY="0000000000000000000000000000000000000000000000000000000000000001"
 
+# copy_repo <dest>: tracked plus new (not ignored) files, so uncommitted work is tested as well;
+# never .env, conf/*/Config.toml or persistent-data/
+copy_repo() {
+	mkdir -p "${1}"
+	git -C "${REPO}" ls-files -z --cached --others --exclude-standard | (cd "${REPO}" && xargs -0 tar cf - 2>/dev/null) | tar xf - -C "${1}"
+}
+
 # render <workdir> <network> [manage.sh flags...]
-#   Copies the tracked files into <workdir>, creates .env from sample.env and runs
+#   Copies the repo into <workdir> (copy_repo), creates .env from sample.env and runs
 #   `./manage.sh -n <network> -a start` with docker stubbed, which renders
 #   conf/<network>/Config.toml (and Signer.toml with `-f signer`) exactly as a real start does.
 render() {
@@ -21,7 +28,7 @@ render() {
 exit 0
 EOF
 	chmod +x "${TMP}/stub/docker"
-	git -C "${REPO}" ls-files -z | (cd "${REPO}" && xargs -0 tar cf -) | tar xf - -C "${work}"
+	copy_repo "${work}"
 	cp "${work}/sample.env" "${work}/.env"
 	sed -i.tmp "s/^SIGNER_PRIVATE_KEY=.*/SIGNER_PRIVATE_KEY=${TEST_SIGNER_KEY}/; s/^TESTNET_SIGNER_PRIVATE_KEY=.*/TESTNET_SIGNER_PRIVATE_KEY=${TEST_SIGNER_KEY}/" "${work}/.env"
 	rm -f "${work}/.env.tmp"
