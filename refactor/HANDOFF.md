@@ -182,6 +182,22 @@ The `monitoring` profile currently stores **every series each exporter offers**:
 - **Constraint:** keep every series used by `conf/monitoring/rules/stacks.yml` and the three dashboards. The promtool tests and a "every panel query returns data" check (as done in the live test) guard this.
 - **When:** before the first release that ships monitoring. Sizing input comes from the phase 5 stress test (series count, TSDB size, RAM).
 
+## Deferred: postgres exposure and the network model (owner, 2026-10-27)
+
+Today postgres is reachable from the host only through the optional `-f postgres` / `EXPOSE_POSTGRES=true` override (`compose.postgres-port.yaml`, bound to 127.0.0.1). The owner wants to revisit this:
+- **Option A: drop the flag** and keep postgres internal; anyone needing it uses `docker compose exec postgres psql` or a tunnel.
+- **Option B: Docker host networking** (`network_mode: host`) instead of the project network.
+
+Trade-offs to weigh for B:
+- **What gets simpler:** no per-port publishing, so flags like this one go away.
+- **Bind addresses become the only protection.** Every listening port is on the host directly, so each service's own setting has to be right: `rpc_bind`, `prometheus_bind`, the API's `STACKS_*_HOST`, postgres `listen_addresses`, Prometheus and Grafana. A wrong default would be publicly reachable.
+- **Service-name DNS is lost** (`stacks-blockchain-api:3700`, `postgres`, `prometheus`, `node-exporter`, ...). The renderer, observers, scrape targets and the API's DB host would move to `127.0.0.1:<port>`.
+- **Port clashes:** two services can't share a port, as the API and the node do today with 9153 for metrics.
+- **Portability:** on Linux it's native. On Docker Desktop, host networking is a newer opt-in feature, which matters for tier-1 macOS (Q18).
+- **Container names** and the `DOCKER_NETWORK` contract (§A.19–20) would change.
+
+Decide before the first release; it affects compose.yaml, the renderer, the monitoring targets and the docs.
+
 ## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
 
 **Branches:**

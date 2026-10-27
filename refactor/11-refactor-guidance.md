@@ -147,6 +147,8 @@ Key mechanical changes that make most of the defects go away:
 
 ## F. TODOs (owner-requested, deferred)
 
+- **TODO (owner, 2026-10-27): postgres exposure and the network model.** Revisit the optional postgres port (`-f postgres` / `EXPOSE_POSTGRES`, `compose.postgres-port.yaml`): drop it, or move the stack to Docker host networking instead of a project network. Trade-offs are listed in HANDOFF. Decide before the first release.
+
 | # | TODO | Added | Evidence |
 |---|---|---|---|
 | TODO-1 | **Run the stacks-node container as non-root.** Change the image or compose setup so the node runs as non-root by default. Also check the API and signer images. | 2026-10-26 (owner) | [15](./15-verification-log.md#non-root-stacks-node-2026-10-26-v) |
