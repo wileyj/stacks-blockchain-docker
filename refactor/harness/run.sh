@@ -118,6 +118,7 @@ SCENARIOS=(
 	"start-flag-postgres||||| -n mainnet -a start -f postgres"
 	"start-expose-postgres||EXPOSE_POSTGRES=true||| -n mainnet -a start"
 	"start-flag-bns-rejected||||| -n mainnet -a start -f bns"
+	"start-flag-monitoring||SIGNER_PRIVATE_KEY=deadbeef01||| -n mainnet -a start -f signer,monitoring"
 	"start-signer-then-plain||SIGNER_PRIVATE_KEY=deadbeef01|./manage.sh -n mainnet -a start -f signer||-n mainnet -a start"
 	"stop-import-finished|STUB_RUNNING=1 STUB_API_LOG=import-started,import-done|||| -n mainnet -a stop"
 	"stop-mainnet-running|STUB_RUNNING=1|||| -n mainnet -a stop"

@@ -141,6 +141,47 @@ Until then, the read-only drift workflow could report new tags the same way (fai
 
 **Before PR'ing any of this upstream:** evaluate whether `stx-labs/stacks-blockchain-docker` allows it at all. That covers the scheduled workflow, the Actions settings it needs, and possibly the vendored `conf/upstream/` approach itself. The repo settings and ruleset above are recommended for the fork regardless; they're GitHub UI/API changes, made only with the owner.
 
+## Phase 2M monitoring: done (2026-10-27)
+
+**The `monitoring` profile** (opt in through `COMPOSE_PROFILES` or `./manage.sh -f monitoring`):
+- **Services:** Prometheus, Grafana, cAdvisor, node-exporter and postgres-exporter, as `stacks-*` containers.
+- **Exposure:** everything is published on `MONITORING_BIND` (127.0.0.1) and gets explicit environment only.
+- **Scrape targets** follow `COMPOSE_PROFILES`: the config job renders `conf/monitoring/prometheus.yml`.
+- **Rules:** `conf/monitoring/rules/stacks.yml` holds 13 recording and alert rules, with promtool unit tests in `tools/monitoring/`.
+- **Grafana:** 3 provisioned dashboards, a required admin password, no anonymous access.
+- **Switches** (0/1): `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS`.
+- **Data:** named volumes.
+- **Ordering:** the node stops before Prometheus.
+- **CI:** the compose matrix covers it, plus a secrets assertion, promtool check and tests, and dashboard JSON validation. A harness scenario covers `-f monitoring`.
+
+Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
+
+**Deviations from doc 12:**
+- named volumes instead of `persistent-data/monitoring`;
+- `stacks-` container prefixes;
+- the switches are 0/1 (Compose limitation);
+- cAdvisor is v0.55.1 (v0.52.1 sees no containers on Docker 29).
+
+**Not done:**
+- Alertmanager (M5, later);
+- the `stacks-status` companion (M3, deferred);
+- a burn-height/"behind Bitcoin" alert (needs a reference);
+- an event-age alert (the units of `stacks_last_event_timestamps` aren't verified);
+- trimming the collected series (M7, below).
+
+## Deferred: pare down metrics collection before release (owner, 2026-10-27)
+
+The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.
+
+- **Keep:** application-level metrics (stacks-node, API, signer) plus a small set of core system metrics, mainly storage (filesystem free/size, disk I/O), with possibly memory and CPU per container and for the host.
+- **How:**
+  - `metric_relabel_configs` keep-lists per scrape job, rendered by the config job;
+  - postgres-exporter `--collector.*` flags / `--disable-default-metrics`;
+  - node-exporter `--collector.disable-defaults` plus the collectors that are needed (`filesystem`, `diskstats`, `meminfo`, `loadavg`, `cpu`);
+  - a narrower cAdvisor `--enable_metrics`.
+- **Constraint:** keep every series used by `conf/monitoring/rules/stacks.yml` and the three dashboards. The promtool tests and a "every panel query returns data" check (as done in the live test) guard this.
+- **When:** before the first release that ships monitoring. Sizing input comes from the phase 5 stress test (series count, TSDB size, RAM).
+
 ## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
 
 **Branches:**

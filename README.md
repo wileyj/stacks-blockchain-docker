@@ -81,6 +81,7 @@ sudo ./scripts/seed-chainstate.sh
 - [Configuration](./docs/config.md)
 - [Upgrading](./docs/upgrade.md)
 - [Usage](./docs/usage.md)
+- [Monitoring](./docs/monitoring.md)
 - [Common Issues](./docs/issues.md)
 
 ---

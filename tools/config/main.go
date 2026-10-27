@@ -55,6 +55,15 @@ func run(confRoot string, getenv func(string) string) error {
 			return err
 		}
 	}
+	if s.Profiles["monitoring"] {
+		if err := os.MkdirAll(filepath.Join(confRoot, "monitoring"), 0o755); err != nil {
+			return err
+		}
+		if err := writeAtomic(filepath.Join(confRoot, "monitoring", "prometheus.yml"), RenderPrometheus(s), 0o644); err != nil {
+			return err
+		}
+		fmt.Println("config: wrote monitoring/prometheus.yml")
+	}
 	for _, o := range s.Observers() {
 		fmt.Printf("config: events_observer %s\n", o.(map[string]any)["endpoint"])
 	}

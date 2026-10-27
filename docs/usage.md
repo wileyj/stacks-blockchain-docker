@@ -11,7 +11,7 @@ Usage:
         -n|--network: [ mainnet | testnet ]
         -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]
     optional args:
-        -f|--flags: [ signer,proxy,postgres ]
+        -f|--flags: [ signer,proxy,postgres,monitoring ]
         export: combined with 'logs' action, exports logs to a text file
     ex: ./manage.sh -n mainnet -a start -f proxy
 	ex: ./manage.sh -n mainnet -a start -f signer,proxy
@@ -47,6 +47,14 @@ Usage:
 
 ```bash
 ./manage.sh -n <network> -a restart -f proxy
+```
+
+#### With monitoring
+
+Prometheus and Grafana on 127.0.0.1; set `GRAFANA_ADMIN_PASSWORD` in `.env` first. See [Monitoring](./monitoring.md).
+
+```bash
+./manage.sh -n <network> -a start -f monitoring
 ```
 
 ---

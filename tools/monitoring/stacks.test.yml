@@ -1,0 +1,78 @@
+## promtool unit tests for conf/monitoring/rules/stacks.yml:
+##   docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.15.0 test rules tools/monitoring/stacks.test.yml
+rule_files:
+  - ../../conf/monitoring/rules/stacks.yml
+evaluation_interval: 1m
+tests:
+  ## Tip frozen while the node has peers: fires after 30m of no change + 5m
+  - interval: 1m
+    input_series:
+      - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
+        values: '100+1x10 110x50'
+      - series: 'stacks_node_neighbors_outbound{job="stacks-node"}'
+        values: '8x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: StacksTipStalled
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: StacksTipStalled
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stacks-node}
+            exp_annotations:
+              summary: "Stacks tip hasn't advanced for 35 minutes"
+              description: "No new Stacks block in 35 minutes although the node has peers. A blocked event observer (API or signer down) stalls the node (refactor/09 D46/D55)."
+
+  ## No peers yet (boot): a frozen tip must not page
+  - interval: 1m
+    input_series:
+      - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
+        values: '0x60'
+      - series: 'stacks_node_neighbors_outbound{job="stacks-node"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: StacksTipStalled
+        exp_alerts: []
+
+  ## API lag: recording rule value and the alert after 10m above 10 blocks
+  - interval: 1m
+    input_series:
+      - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
+        values: '1000+2x30'
+      - series: 'stacks_block_height{job="stacks-api"}'
+        values: '1000+1x30'
+    promql_expr_test:
+      - expr: stacks:api_lag
+        eval_time: 20m
+        exp_samples:
+          - labels: 'stacks:api_lag'
+            value: 20
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: StacksApiBehindNode
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: StacksApiBehindNode
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "API is 25 blocks behind the node"
+              description: "The API isn't keeping up with the node's events. Check the API and postgres logs."
+
+  ## A down target alerts only after the 15m header-sync grace
+  - interval: 1m
+    input_series:
+      - series: 'up{job="stacks-signer", instance="stacks-signer:9154"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StacksTargetDown
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: StacksTargetDown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stacks-signer, instance: "stacks-signer:9154"}
+            exp_annotations:
+              summary: "stacks-signer metrics unreachable"
+              description: "Prometheus can't scrape stacks-signer:9154 (stacks-signer). On a fresh node this is normal during the initial Bitcoin header sync."

@@ -1,0 +1,28 @@
+=== scenario: start-flag-monitoring
+--- args: ./manage.sh -n mainnet -a start -f signer,monitoring
+--- .env overrides: SIGNER_PRIVATE_KEY=deadbeef01
+--- exit code: 0
+--- output (first 30 lines):
+Creating data dir <REPO>/persistent-data/mainnet/stacks-blockchain 
+Creating data dir <REPO>/persistent-data/mainnet/postgres 
+Creating data dir <REPO>/persistent-data/mainnet/stacks-signer 
+Creating data dir <REPO>/persistent-data/mainnet/event-replay 
+Starting all services for stacks-blockchain 
+[ Success ]      Brought up mainnet
+    Follow logs: ./manage.sh -n mainnet -a logs 
+--- docker calls:
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile node --profile api --profile signer --profile monitoring up -d
+--- filesystem side effects:
+  + ./.env.save
+  + ./persistent-data
+  + ./persistent-data/mainnet
+  + ./persistent-data/mainnet/event-replay
+  + ./persistent-data/mainnet/postgres
+  + ./persistent-data/mainnet/stacks-blockchain
+  + ./persistent-data/mainnet/stacks-signer

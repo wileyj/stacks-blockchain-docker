@@ -45,3 +45,6 @@ exported-logs/
 # config job: per-user overrides and hand-edited configs moved aside
 conf/*/*.overrides.toml
 conf/*/*.legacy*
+
+# config job: rendered Prometheus config
+conf/monitoring/prometheus.yml

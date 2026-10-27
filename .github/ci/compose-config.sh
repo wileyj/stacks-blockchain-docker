@@ -28,13 +28,38 @@ check() {
 # Every network x profile set, as COMPOSE_PROFILES in .env would select them; '*' is what `docker compose --profile '*' down` loads
 for n in mainnet testnet; do
 	export NETWORK="${n}"
-	for profiles in node api node,api node,api,signer node,api,signer,proxy signer bns event-replay '*'; do
+	for profiles in node api node,api node,api,signer node,api,signer,proxy signer node,api,monitoring bns event-replay '*'; do
 		export COMPOSE_PROFILES="${profiles}"
 		check "root ${n} ${profiles}" -f "${REPO}/compose.yaml"
 	done
 	COMPOSE_PROFILES=node,api check "root ${n} node,api +postgres port" -f "${REPO}/compose.yaml" -f "${REPO}/compose.postgres-port.yaml"
 done
 unset COMPOSE_PROFILES
+
+# refactor/12 acceptance 5: no secret from .env reaches a monitoring container. postgres-exporter needs
+# the database credentials and Grafana its own admin password; nothing else may carry a secret.
+total=$((total + 1))
+secrets_env="$(mktemp)"
+{ cat "${TMP}/.env"; echo "SIGNER_PRIVATE_KEY=sbd-secret-signer"; echo "TESTNET_SIGNER_PRIVATE_KEY=sbd-secret-tsigner"
+  echo "AUTH_TOKEN=sbd-secret-auth"; echo "BTC_RPC_PASS=sbd-secret-btc"; echo "GRAFANA_ADMIN_PASSWORD=sbd-secret-grafana"; } > "${secrets_env}"
+leaks=$(NETWORK=mainnet COMPOSE_PROFILES='*' docker compose --env-file "${secrets_env}" -f "${REPO}/compose.yaml" config --format json \
+	| python3 -I -c '
+import sys, json
+svc = json.load(sys.stdin)["services"]
+allowed = {"grafana": {"sbd-secret-grafana"}}
+for name in ("prometheus", "grafana", "cadvisor", "node-exporter", "postgres-exporter"):
+    env = svc.get(name, {}).get("environment") or {}
+    for k, v in env.items():
+        if v and "sbd-secret-" in v and v not in allowed.get(name, set()):
+            print(f"{name}: {k}")
+')
+rm -f "${secrets_env}"
+if [ -z "${leaks}" ]; then
+	echo "ok   monitoring containers carry no .env secrets"
+else
+	echo "FAIL monitoring containers carry .env secrets:"; echo "${leaks}" | sed 's/^/     /'
+	fail=$((fail + 1))
+fi
 
 echo "${total} combinations, ${fail} failed"
 [ "${fail}" -eq 0 ]

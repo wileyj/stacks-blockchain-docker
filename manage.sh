@@ -109,7 +109,7 @@ COMPOSE_FILE_MAIN="${SCRIPTPATH}/compose.yaml"
 COMPOSE_FILE_PG_PORT="${SCRIPTPATH}/compose.postgres-port.yaml"
 # Containers of a stack started from the old compose-files/ layout (a different compose project)
 LEGACY_PROJECT="compose-files"
-SUPPORTED_FLAGS=(signer proxy postgres bns)
+SUPPORTED_FLAGS=(signer proxy postgres bns monitoring)
 ${VERBOSE} && log "SUPPORTED_FLAGS: ${SUPPORTED_FLAGS[*]}"
 SUPPORTED_NETWORKS=(mainnet testnet)
 ${VERBOSE} && log "SUPPORTED_NETWORKS: ${SUPPORTED_NETWORKS[*]}"
@@ -147,7 +147,7 @@ usage() {
 	log "        -n|--network: [ mainnet | testnet ]"
 	log "        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]"
 	log "    optional args:"
-	log "        -f|--flags: [ signer,proxy,postgres ]"
+	log "        -f|--flags: [ signer,proxy,postgres,monitoring ]"
 	log "        export: combined with 'logs' action, exports logs to a text file"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f proxy${COLRESET}"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f signer,proxy${COLRESET}"
@@ -345,7 +345,7 @@ check_bns() {
 }
 
 # Build the compose arguments for a manage.sh profile and flags (sets COMPOSE_ARGS)
-#     - stacks-blockchain: profiles node + api, plus signer/proxy from the flags
+#     - stacks-blockchain: profiles node + api, plus signer/proxy/monitoring from the flags
 #     - event-replay / bns: the job's own profile
 #     - all: every profile, used to stop, follow logs and pull
 #     - the postgres flag (or EXPOSE_POSTGRES=true) adds the port override file
@@ -358,7 +358,7 @@ compose_args() {
 			profiles=(node api)
 			for flag in ${flags}; do
 				case ${flag} in
-					signer|proxy) profiles+=("${flag}") ;;
+					signer|proxy|monitoring) profiles+=("${flag}") ;;
 				esac
 			done
 			;;

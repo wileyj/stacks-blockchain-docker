@@ -36,6 +36,7 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `METRICS_BIND_ADDR`             | Host address the node and signer metrics ports are published on | `127.0.0.1` |
 | `EXPOSE_POSTGRES`               | Publish postgres on the host (`compose.postgres-port.yaml`; with plain compose add it to `COMPOSE_FILE`) | `false` |
 | `POSTGRES_BIND_ADDR`            | Host address for the published postgres port      | `127.0.0.1`               |
+| `MONITORING_BIND`, `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md) | `127.0.0.1`, `9090`, `3000`, empty, `15d`, `1`, `1` |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |
 | `STACKS_SIGNER_VERSION`         | Stacks Signer Docker image version                    | `latest released version` |
 | `STACKS_BLOCKCHAIN_API_VERSION` | Stacks Blockchain API Docker image version            | `latest released version` |
