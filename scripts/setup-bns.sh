@@ -105,7 +105,7 @@ extract_files() {
 }
 
 
-for FILE in ${BNS_FILES[@]}; do
+for FILE in "${BNS_FILES[@]}"; do
     counter=0 # reset sha1sum comparison counter to 0 for each file 
     echo
     check_sha256 "${FILE}"

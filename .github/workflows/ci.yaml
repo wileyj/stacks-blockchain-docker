@@ -1,0 +1,59 @@
+## Phase 0 safety net (refactor/11-refactor-guidance.md §D.1, §E).
+## Every script under .github/ci/ also runs locally; none of them touch the repo's .env, conf/ or persistent-data/.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: shellcheck + compose config
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      ## Error level only for now; the existing warnings are cleaned up in phase 1
+      - name: shellcheck
+        run: shellcheck -x -S error manage.sh scripts/*.sh .github/ci/*.sh
+      - name: docker compose config (every network x profile x flag)
+        run: .github/ci/compose-config.sh
+
+  harness:
+    name: manage.sh characterization harness
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: harness --check
+        if: hashFiles('refactor/harness/run.sh') != ''
+        run: refactor/harness/run.sh --check
+
+  check-config:
+    name: check-config on rendered configs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: render with manage.sh, validate with the pinned images
+        run: .github/ci/check-config.sh mainnet testnet
+
+  boot:
+    name: boot smoke (${{ matrix.network }})
+    needs: [static, check-config]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [mainnet, testnet]
+    steps:
+      - uses: actions/checkout@v4
+      ## Asserts "starts and stays up without panics/restarts", not sync: the testnet BTC peer is slow
+      - name: boot and hold 180s
+        run: .github/ci/boot-smoke.sh ${{ matrix.network }} 180
