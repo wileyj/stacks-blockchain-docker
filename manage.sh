@@ -494,6 +494,13 @@ update_configs(){
 				}
     fi
 
+	# API observer timeout: the node backs off up to 3x this value while the API is unreachable,
+	# so a large value delays recovery after an API restart (D55). Not set in older .env files.
+	API_OBSERVER_TIMEOUT_MS=${API_OBSERVER_TIMEOUT_MS:-60000}
+	if [[ ! "${API_OBSERVER_TIMEOUT_MS}" =~ ^[0-9]+$ ]]; then
+		log_exit "API_OBSERVER_TIMEOUT_MS must be a number of milliseconds: ${COLCYAN}${API_OBSERVER_TIMEOUT_MS}${COLRESET}"
+	fi
+
     ## update Config.toml with btc vars
 	[[ ! -f "${CONFIG_TOML}" ]] && cp "${CONFIG_TOML}.sample" "${CONFIG_TOML}"
 	${VERBOSE} && log "${COLYELLOW}Updating values in ${CONFIG_TOML} from .env${COLRESET}"
@@ -506,6 +513,7 @@ update_configs(){
 		/^auth_token/s/.*/auth_token = \"${AUTH_TOKEN}\"/;
 		/^endpoint = \"stacks-signer/s/.*/endpoint = \"stacks-signer:${STACKS_SIGNER_PORT}\"/;
 		/^prometheus_bind/s/.*/prometheus_bind = \"0.0.0.0:${NODE_METRICS_PORT}\"/;
+		/^endpoint = \"stacks-blockchain-api/,/^\[/s/^timeout_ms.*/timeout_ms = ${API_OBSERVER_TIMEOUT_MS}/;
 	" "${CONFIG_TOML}" 2>&1) || {
         log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
     }
