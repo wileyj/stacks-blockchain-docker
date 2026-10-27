@@ -1,5 +1,7 @@
-# The build context is the repo root (the tests read conf/*/*.sample). Send only what the build
+# The build context is the repo root (the tests read the conf/ templates). Send only what the build
 # needs: never persistent-data/ (hundreds of GB on a synced host), .env or rendered configs.
 *
 !tools/config/
 !conf/*/*.sample
+!conf/*/Config.deployment.toml
+!conf/upstream/

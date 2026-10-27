@@ -1,0 +1,3 @@
+repository=https://github.com/stacks-network/stacks-core
+commit=26a964b01b9a72c70686ec29b126edce7647bf54
+files=sample/conf/mainnet-follower-conf.toml sample/conf/testnet-follower-conf.toml

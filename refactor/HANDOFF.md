@@ -111,6 +111,28 @@ Not done:
 - a live `manage.sh` boot (its fixed container names conflict with the `sbd-*`-only rule; the stubbed harness + compose boot cover it);
 - 12-monitoring-plan still describes the old overlay mechanism.
 
+## Upstream template sync (Q27): tier 0 done 2026-10-27; evaluate before any upstream PR
+
+**Tier 0 (no write token anywhere):**
+- `tools/sync-upstream-conf.sh` is run by hand. It vendors the upstream follower samples into `conf/upstream/` (recording the commit in `SOURCE`, which is only bumped when a file changes), regenerates `conf/<net>/Config.toml.sample` from those plus `Config.deployment.toml`, and runs `check-config`. The maintainer reviews, makes a signed commit and opens the PR.
+- `--check` is read-only.
+- `.github/workflows/upstream-drift.yaml` runs it daily and on dispatch:
+  - `contents: read`, no secrets;
+  - only `actions/checkout`, pinned by SHA with `persist-credentials: false`;
+  - it reports drift by failing.
+
+Verified in 15.
+
+**Tier 1 (an automated PR) is deferred.** The owner wants it done carefully. The proposed controls:
+- triggered by `schedule` only;
+- a protected Environment (default branch only, required reviewer, prevent self-review) for the write step;
+- a split `fetch` (read-only) / `open-pr` job; the `open-pr` job runs no repo or upstream code, applies the patch only to allow-listed paths, pushes only to `bot/upstream-sync`, and uses `gh` only;
+- actions pinned by SHA;
+- a ruleset on the default branch: PRs, CODEOWNERS, signed commits, approval of the latest push, no bypass for Actions;
+- no auto-merge; read-only default workflow permissions; no PAT or App.
+
+**Before PR'ing any of this upstream:** evaluate whether `stx-labs/stacks-blockchain-docker` allows it at all. That covers the scheduled workflow, the Actions settings it needs, and possibly the vendored `conf/upstream/` approach itself. The repo settings and ruleset above are recommended for the fork regardless; they're GitHub UI/API changes, made only with the owner.
+
 ## Resuming on another machine
 1. Get `refactor/` there. The owner can commit and push the branch, or copy just the folder: `tar czf refactor.tgz refactor/`, then `scp` it and untar it in the clone (branch `chore/refactor` @ `d2e558c`).
 2. Optionally copy the memory files (`MEMORY.md`, `refactor-plan-priorities.md`) into the new machine's `~/.claude/projects/<path-slug>/memory/`.

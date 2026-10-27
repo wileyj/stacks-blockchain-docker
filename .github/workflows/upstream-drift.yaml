@@ -1,0 +1,30 @@
+## Tier 0 upstream template check (refactor/11 Q27, refactor/HANDOFF.md).
+## Reports when stacks-core `main` sample/conf differs from conf/upstream/ by failing this workflow,
+## which notifies by the usual "workflow failed" email. It never writes: read-only token, no secrets,
+## no branch pushes, no PRs. Fix drift by hand: tools/sync-upstream-conf.sh, review, signed commit, PR.
+name: Upstream config drift
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: conf/ vs stacks-core main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      ## Pinned by commit (v5.1.0); no other actions run in this workflow
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: tools/sync-upstream-conf.sh --check
+        run: tools/sync-upstream-conf.sh --check main

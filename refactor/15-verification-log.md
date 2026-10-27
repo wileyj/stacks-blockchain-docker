@@ -345,6 +345,19 @@ Findings:
 - `scripts/postgres-initdb.sh` needs `PG_USER`/`PG_DATABASE`/`PG_SCHEMA`. These came from `env_file: .env` before; they are now in the postgres `environment:` allow-list.
 - `config-check` and `signer-config-check` (pinned images) passed for every profile set, and the renderer's own tests run during its image build.
 
+### Upstream template sync, tier 0 — Linux x64, 2026-10-27 [V]
+
+`tools/sync-upstream-conf.sh` vendored `sample/conf/{mainnet,testnet}-follower-conf.toml` from stacks-core `main` @ `26a964b` (the testnet file is unchanged since `097641bd`) and regenerated both `Config.toml.sample` with `config template`.
+
+| Check | Result |
+|---|---|
+| Rendered configs before vs after the regeneration, every network × `node` / `node,api` / `node,api,signer` (parsed TOML) | **Identical** except testnet `node.miner = false` is no longer written; `false` is stacks-node's default, so behavior is unchanged |
+| `check-config` with the pinned images on every rendered config | All valid |
+| `--check` against current `main` | `in sync`, exit 0, repo untouched |
+| `--check` against an older upstream commit (`9261045`) | Exit 1: `DRIFT` on `upstream/testnet-follower-conf.toml`, `upstream/SOURCE` and both samples, with the diff printed; repo untouched |
+| Consistency test (committed sample == generated from committed upstream + deployment) | Passes; it runs inside the config image build, so a hand-edited sample fails CI |
+| Compose-only boot, testnet `node,api` | PASS |
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |

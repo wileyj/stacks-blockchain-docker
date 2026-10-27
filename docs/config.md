@@ -9,6 +9,10 @@ start overwrites them. Put your own settings in:
   generated file, keys you set win, and `[[events_observer]]` entries are added to the generated ones.
 - `./conf/<network>/Signer.overrides.toml`: the same for the signer.
 
+The templates follow upstream stacks-core: `conf/upstream/` holds its sample configs (commit in
+`conf/upstream/SOURCE`), `conf/<network>/Config.deployment.toml` this repo's defaults, and maintainers
+regenerate the templates with `tools/sync-upstream-conf.sh`.
+
 A hand-edited `Config.toml` from an earlier version is moved to `Config.toml.legacy` the first time the
 job runs; copy any custom settings from it into `Config.overrides.toml`.
 

@@ -18,6 +18,14 @@ import (
 )
 
 func main() {
+	// `config template ...` builds conf/<network>/Config.toml.sample (tools/sync-upstream-conf.sh)
+	if len(os.Args) > 1 && os.Args[1] == "template" {
+		if err := runTemplate(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "config: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	confRoot := flag.String("conf", "/conf", "directory holding conf/<network>/")
 	flag.Parse()
 	if err := run(*confRoot, os.Getenv); err != nil {
