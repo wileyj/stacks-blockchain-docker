@@ -1,0 +1,43 @@
+=== scenario: start-testnet-signer
+--- args: ./manage.sh -n testnet -a start -f signer
+--- .env overrides: TESTNET_SIGNER_PRIVATE_KEY=deadbeef02
+--- exit code: 0
+--- output (first 30 lines):
+Creating persistent-data for testnet 
+Starting all services for stacks-blockchain 
+[ Success ]      Brought up testnet
+    Follow logs: ./manage.sh -n testnet -a logs 
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/testnet.yaml -f <REPO>/compose-files/extra-services/signer.yaml --profile stacks-blockchain up -d
+--- filesystem side effects:
+  + ./.env.save
+  + ./conf/testnet/Config.toml
+  + ./conf/testnet/Signer.toml
+  + ./persistent-data
+  + ./persistent-data/testnet
+  + ./persistent-data/testnet/event-replay
+  ~ ./conf/testnet/Config.toml (created from ./conf/testnet/Config.toml.sample) diff vs sample:
+      @@ -33,7 +33,7 @@
+       [[events_observer]]
+       endpoint = "stacks-blockchain-api:3700"
+       events_keys = ["*"]
+      -timeout_ms = 60_000
+      +timeout_ms = 60000
+       
+       [[ustx_balance]]
+       address = "ST2QKZ4FKHAH1NQKYKYAYZPY440FEPK7GZ1R5HBP2"
+  ~ ./conf/testnet/Signer.toml (created from ./conf/testnet/Signer.toml.sample) diff vs sample:
+      @@ -3,6 +3,6 @@
+       metrics_endpoint = "0.0.0.0:9154"
+       network = "testnet"
+       db_path = "/root/stacks-signer/data/signer.sqlite"
+      -auth_password = ""
+      -stacks_private_key = ""
+      +auth_password = "1234"
+      +stacks_private_key = "deadbeef02"
+       block_proposal_timeout_ms = 180000

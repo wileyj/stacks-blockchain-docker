@@ -1,0 +1,10 @@
+=== scenario: status-running
+--- args: ./manage.sh -n mainnet -a status
+--- stub env: STUB_RUNNING=1
+--- exit code: 0
+--- output (first 30 lines):
+
+Stacks Blockchain services are running 
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:

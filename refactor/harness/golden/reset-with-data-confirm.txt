@@ -1,0 +1,13 @@
+=== scenario: reset-with-data-confirm
+--- args: ./manage.sh -n mainnet -a reset
+--- pre: mkdir -p persistent-data/mainnet/postgres
+--- stdin: y
+--- exit code: 0
+--- output (first 30 lines):
+
+[ Success ]      Persistent data deleted
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:
+  - ./persistent-data/mainnet
+  - ./persistent-data/mainnet/postgres

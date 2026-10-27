@@ -1,0 +1,68 @@
+# P1/P2 live test: mainnet follower + API + postgres from genesis. Named volumes only.
+# BTC peer from env: BTC_HOST (default 192.168.8.252), BTC_P2P_PORT (8333), BTC_RPC_PORT (8332).
+# On macOS off-LAN use the ztnuc tunnel and BTC_HOST=host.docker.internal BTC_P2P_PORT=28333 BTC_RPC_PORT=28332.
+name: sbd-p1
+services:
+  postgres:
+    image: postgres:17-alpine
+    shm_size: 256MB
+    environment: [POSTGRES_PASSWORD=postgres, POSTGRES_DB=postgres]
+    volumes: [pg:/var/lib/postgresql/data]
+  stacks-blockchain-api:
+    image: hirosystems/stacks-blockchain-api:9.7.0
+    command: ["npm", "run", "start"]
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=postgres
+      - PG_PASSWORD=postgres
+      - PG_DATABASE=postgres
+      - PG_SCHEMA=public
+      - STACKS_CHAIN_ID=0x00000001
+      - STACKS_CORE_EVENT_PORT=3700
+      - STACKS_CORE_EVENT_HOST=0.0.0.0
+      - STACKS_BLOCKCHAIN_API_PORT=3999
+      - STACKS_BLOCKCHAIN_API_HOST=0.0.0.0
+      - STACKS_BLOCKCHAIN_API_DB=pg
+      - STACKS_CORE_RPC_HOST=stacks-blockchain
+      - STACKS_CORE_RPC_PORT=20443
+    ports: ["127.0.0.1:33999:3999", "127.0.0.1:39153:9153"]
+    depends_on: [postgres]
+  stacks-blockchain:
+    image: ghcr.io/stacks-network/stacks-core:4.0.4
+    restart: on-failure
+    command: ["/bin/stacks-node", "start", "--config", "/etc/stacks/Config.toml"]
+    environment: [RUST_BACKTRACE=full, STACKS_LOG_DEBUG=0, STACKS_LOG_JSON=0]
+    configs: [{source: node_toml, target: /etc/stacks/Config.toml}]
+    volumes: [chain:/root/stacks-blockchain/data]
+    ports: ["127.0.0.1:30443:20443", "127.0.0.1:29153:9153"]
+    depends_on: [stacks-blockchain-api]
+configs:
+  node_toml:
+    content: |
+      [node]
+      working_dir = "/root/stacks-blockchain/data"
+      rpc_bind = "0.0.0.0:20443"
+      p2p_bind = "0.0.0.0:20444"
+      bootstrap_node = "02196f005965cebe6ddc3901b7b1cc1aa7a88f305bb8c5893456b8f9a605923893@seed.mainnet.hiro.so:20444"
+      prometheus_bind = "0.0.0.0:9153"
+
+      [burnchain]
+      chain = "bitcoin"
+      mode = "mainnet"
+      peer_host = "${BTC_HOST:-192.168.8.252}"
+      rpc_port = ${BTC_RPC_PORT:-8332}
+      peer_port = ${BTC_P2P_PORT:-8333}
+      # username/password deliberately omitted (P1: follower with BTC RPC failing)
+
+      [connection_options]
+      auth_token = "1234"
+      private_neighbors = false
+
+      [[events_observer]]
+      endpoint = "stacks-blockchain-api:3700"
+      events_keys = ["*"]
+      timeout_ms = 300_000
+volumes: {pg: {}, chain: {}}

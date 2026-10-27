@@ -1,0 +1,8 @@
+=== scenario: bns-undefined
+--- args: ./manage.sh -n mainnet -a bns
+--- exit code: 0
+--- output (first 30 lines):
+
+[ Error ]        Undefined or commented BNS_IMPORT_DIR variable in <REPO>/.env
+--- docker calls:
+--- filesystem side effects:

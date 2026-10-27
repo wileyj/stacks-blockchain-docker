@@ -1,0 +1,82 @@
+# Resolved with: docker compose --env-file .env -f compose-files/common.yaml -f compose-files/networks/mainnet.yaml -f compose-files/extra-services/bns.yaml --profile bns config
+# .env = sample.env defaults; NETWORK=mainnet STACKS_CHAIN_ID=2147483648; <REPO> = repo root
+# Generated 2026-10-16 with Docker Compose version v2.39.1-desktop.1. Reference snapshot only - regenerate rather than edit.
+name: compose-files
+services:
+  bns:
+    profiles:
+      - bns
+    command:
+      - sh
+      - -c
+      - /scripts/setup-bns.sh
+    container_name: bns_data
+    environment:
+      AUTH_TOKEN: "1234"
+      BTC_HOST: bitcoin.mainnet.stacks.org
+      BTC_P2P_PORT: "8333"
+      BTC_RPC_PASS: foundation
+      BTC_RPC_PORT: "8332"
+      BTC_RPC_USER: stacks
+      DOCKER_NETWORK: stacks
+      EXPOSE_POSTGRES: "false"
+      GIT_TAG: master
+      NETWORK: mainnet
+      NGINX_PROXY_PORT: "80"
+      NODE_ENV: production
+      NODE_METRICS_PORT: "9153"
+      PG_DATABASE: postgres
+      PG_HOST: postgres
+      PG_PASSWORD: postgres
+      PG_PORT: "5432"
+      PG_SCHEMA: public
+      PG_SHMSIZE: 256MB
+      PG_USER: postgres
+      POSTGRES_VERSION: "17"
+      RUST_BACKTRACE: full
+      SIGNER_METRICS_PORT: "9154"
+      SIGNER_PRIVATE_KEY: ""
+      STACKS_BLOCKCHAIN_API_DB: pg
+      STACKS_BLOCKCHAIN_API_HOST: 0.0.0.0
+      STACKS_BLOCKCHAIN_API_PORT: "3999"
+      STACKS_BLOCKCHAIN_API_VERSION: 9.0.1
+      STACKS_BLOCKCHAIN_VERSION: 4.0.1
+      STACKS_CHAIN_ID_DEFAULT: "2147483648"
+      STACKS_CORE_EVENT_HOST: 0.0.0.0
+      STACKS_CORE_EVENT_PORT: "3700"
+      STACKS_CORE_P2P_PORT: "20444"
+      STACKS_CORE_RPC_HOST: stacks-blockchain
+      STACKS_CORE_RPC_PORT: "20443"
+      STACKS_EXPORT_EVENTS_FILE: /tmp/event-replay/stacks-node-events.tsv
+      STACKS_LOG_DEBUG: "0"
+      STACKS_LOG_JSON: "0"
+      STACKS_SHUTDOWN_TIMEOUT: "1200"
+      STACKS_SIGNER_PORT: "30000"
+      STACKS_SIGNER_VERSION: 4.0.1
+      TBTC_HOST: bitcoin.regtest.hiro.so
+      TBTC_P2P_PORT: "18444"
+      TBTC_RPC_PORT: "18443"
+      TESTNET_SIGNER_PRIVATE_KEY: ""
+      USER_ID: "1000"
+      V2_POX_MIN_AMOUNT_USTX: "90000000260"
+      VERBOSE: "false"
+    image: bash
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: <REPO>/persistent-data/bns-data
+        target: /bns-data
+        bind:
+          create_host_path: true
+      - type: bind
+        source: <REPO>/scripts
+        target: /scripts
+        bind:
+          create_host_path: true
+    working_dir: /srv
+networks:
+  default:
+    name: stacks
+    ipam:
+      driver: default

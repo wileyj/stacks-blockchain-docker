@@ -1,0 +1,24 @@
+=== scenario: logs-export-running
+--- args: ./manage.sh -n mainnet -a logs export
+--- stub env: STUB_RUNNING=1
+--- exit code: 0
+--- output (first 30 lines):
+Exporting log data to text file 
+    - Creating log dir: <REPO>/exported-logs 
+    - Exporting logs for stacks-blockchain -> <REPO>/exported-logs/stacks-blockchain.log 
+    - Exporting logs for stacks-blockchain-api -> <REPO>/exported-logs/stacks-blockchain-api.log 
+    - Exporting logs for postgres -> <REPO>/exported-logs/postgres.log 
+[ Success ]      Log export complete
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker ps -f name=^stacks-blockchain$ -q
+  docker logs stacks-blockchain
+  docker ps -f name=^stacks-blockchain-api$ -q
+  docker logs stacks-blockchain-api
+  docker ps -f name=^postgres$ -q
+  docker logs postgres
+--- filesystem side effects:
+  + ./exported-logs
+  + ./exported-logs/postgres.log
+  + ./exported-logs/stacks-blockchain-api.log
+  + ./exported-logs/stacks-blockchain.log

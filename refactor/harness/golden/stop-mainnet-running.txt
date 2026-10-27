@@ -1,0 +1,27 @@
+=== scenario: stop-mainnet-running
+--- args: ./manage.sh -n mainnet -a stop
+--- stub env: STUB_RUNNING=1
+--- exit code: 0
+--- output (first 30 lines):
+Stopping stacks-blockchain 
+    Timeout is set for 1200 seconds 
+Stopping stacks-blockchain-api 
+Stopping postgres 
+Stopping all services for stacks-blockchain 
+Stopping all services 
+[ Success ]      Brought down mainnet
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker compose -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml ps -q stacks-blockchain
+  docker ps -f name=^stacks-blockchain$ -q
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml --profile stacks-blockchain stop -t 1200 stacks-blockchain
+  docker ps -f name=^stacks-blockchain-api$ -q
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml --profile stacks-blockchain stop stacks-blockchain-api
+  docker ps -f name=^postgres$ -q
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml --profile stacks-blockchain stop postgres
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml -f <REPO>/compose-files/extra-services/bns.yaml -f <REPO>/compose-files/extra-services/postgres.yaml -f <REPO>/compose-files/extra-services/proxy.yaml -f <REPO>/compose-files/extra-services/signer.yaml --profile stacks-blockchain down
+--- filesystem side effects:

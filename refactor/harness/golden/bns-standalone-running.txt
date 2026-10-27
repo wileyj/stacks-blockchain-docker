@@ -1,0 +1,12 @@
+=== scenario: bns-standalone-running
+--- args: ./manage.sh bns
+--- stub env: STUB_RUNNING=1
+--- .env overrides: BNS_IMPORT_DIR=/bns-data
+--- exit code: 1
+--- output (first 30 lines):
+
+[ Error ]        Refusing to download BNS data - services need to be stopped first
+[ Exit Error ]       Stop the services with: ./manage.sh -n mainnet -a stop
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:

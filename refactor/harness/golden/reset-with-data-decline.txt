@@ -1,0 +1,11 @@
+=== scenario: reset-with-data-decline
+--- args: ./manage.sh -n mainnet -a reset
+--- pre: mkdir -p persistent-data/mainnet/postgres
+--- stdin: n
+--- exit code: 1
+--- output (first 30 lines):
+
+[ Exit Error ]   Delete Cancelled
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:

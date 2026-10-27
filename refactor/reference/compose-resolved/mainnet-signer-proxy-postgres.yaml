@@ -1,0 +1,349 @@
+# Resolved with: docker compose --env-file .env -f compose-files/common.yaml -f compose-files/networks/mainnet.yaml -f compose-files/extra-services/signer.yaml -f compose-files/extra-services/proxy.yaml -f compose-files/extra-services/postgres.yaml --profile stacks-blockchain config
+# .env = sample.env defaults; NETWORK=mainnet STACKS_CHAIN_ID=0x00000001; <REPO> = repo root
+# Generated 2026-10-16 with Docker Compose version v2.39.1-desktop.1. Reference snapshot only - regenerate rather than edit.
+name: compose-files
+services:
+  nginx:
+    profiles:
+      - stacks-blockchain
+    container_name: nginx
+    image: nginx:alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "80"
+        protocol: tcp
+    restart: on-failure
+    volumes:
+      - type: bind
+        source: <REPO>/conf/nginx/default.conf
+        target: /etc/nginx/conf.d/default.conf
+        bind:
+          create_host_path: true
+  postgres:
+    profiles:
+      - event-replay
+      - stacks-blockchain
+    container_name: postgres
+    environment:
+      AUTH_TOKEN: "1234"
+      BTC_HOST: bitcoin.mainnet.stacks.org
+      BTC_P2P_PORT: "8333"
+      BTC_RPC_PASS: foundation
+      BTC_RPC_PORT: "8332"
+      BTC_RPC_USER: stacks
+      DOCKER_NETWORK: stacks
+      EXPOSE_POSTGRES: "false"
+      GIT_TAG: master
+      NETWORK: mainnet
+      NGINX_PROXY_PORT: "80"
+      NODE_ENV: production
+      NODE_METRICS_PORT: "9153"
+      PG_DATABASE: postgres
+      PG_HOST: postgres
+      PG_PASSWORD: postgres
+      PG_PORT: "5432"
+      PG_SCHEMA: public
+      PG_SHMSIZE: 256MB
+      PG_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_VERSION: "17"
+      RUST_BACKTRACE: full
+      SIGNER_METRICS_PORT: "9154"
+      SIGNER_PRIVATE_KEY: ""
+      STACKS_BLOCKCHAIN_API_DB: pg
+      STACKS_BLOCKCHAIN_API_HOST: 0.0.0.0
+      STACKS_BLOCKCHAIN_API_PORT: "3999"
+      STACKS_BLOCKCHAIN_API_VERSION: 9.0.1
+      STACKS_BLOCKCHAIN_VERSION: 4.0.1
+      STACKS_CHAIN_ID_DEFAULT: "2147483648"
+      STACKS_CORE_EVENT_HOST: 0.0.0.0
+      STACKS_CORE_EVENT_PORT: "3700"
+      STACKS_CORE_P2P_PORT: "20444"
+      STACKS_CORE_RPC_HOST: stacks-blockchain
+      STACKS_CORE_RPC_PORT: "20443"
+      STACKS_EXPORT_EVENTS_FILE: /tmp/event-replay/stacks-node-events.tsv
+      STACKS_LOG_DEBUG: "0"
+      STACKS_LOG_JSON: "0"
+      STACKS_SHUTDOWN_TIMEOUT: "1200"
+      STACKS_SIGNER_PORT: "30000"
+      STACKS_SIGNER_VERSION: 4.0.1
+      TBTC_HOST: bitcoin.regtest.hiro.so
+      TBTC_P2P_PORT: "18444"
+      TBTC_RPC_PORT: "18443"
+      TESTNET_SIGNER_PRIVATE_KEY: ""
+      V2_POX_MIN_AMOUNT_USTX: "90000000260"
+      VERBOSE: "false"
+    image: postgres:17-alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 5432
+        published: "5432"
+        protocol: tcp
+    restart: on-failure
+    shm_size: "268435456"
+    volumes:
+      - type: bind
+        source: <REPO>/scripts/postgres-initdb.sh
+        target: /docker-entrypoint-initdb.d/postgres-initdb.sh
+        bind:
+          create_host_path: true
+      - type: bind
+        source: <REPO>/persistent-data/mainnet/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
+  stacks-blockchain:
+    profiles:
+      - stacks-blockchain
+    command:
+      - /bin/stacks-node
+      - start
+      - --config
+      - /src/stacks-blockchain/Config.toml
+    container_name: stacks-blockchain
+    depends_on:
+      stacks-blockchain-api:
+        condition: service_started
+        required: true
+    environment:
+      AUTH_TOKEN: "1234"
+      BTC_HOST: bitcoin.mainnet.stacks.org
+      BTC_P2P_PORT: "8333"
+      BTC_RPC_PASS: foundation
+      BTC_RPC_PORT: "8332"
+      BTC_RPC_USER: stacks
+      DOCKER_NETWORK: stacks
+      EXPOSE_POSTGRES: "false"
+      GIT_TAG: master
+      NETWORK: mainnet
+      NGINX_PROXY_PORT: "80"
+      NODE_ENV: production
+      NODE_METRICS_PORT: "9153"
+      PG_DATABASE: postgres
+      PG_HOST: postgres
+      PG_PASSWORD: postgres
+      PG_PORT: "5432"
+      PG_SCHEMA: public
+      PG_SHMSIZE: 256MB
+      PG_USER: postgres
+      POSTGRES_VERSION: "17"
+      RUST_BACKTRACE: full
+      SIGNER_METRICS_PORT: "9154"
+      SIGNER_PRIVATE_KEY: ""
+      STACKS_BLOCKCHAIN_API_DB: pg
+      STACKS_BLOCKCHAIN_API_HOST: 0.0.0.0
+      STACKS_BLOCKCHAIN_API_PORT: "3999"
+      STACKS_BLOCKCHAIN_API_VERSION: 9.0.1
+      STACKS_BLOCKCHAIN_VERSION: 4.0.1
+      STACKS_CHAIN_ID_DEFAULT: "2147483648"
+      STACKS_CORE_EVENT_HOST: 0.0.0.0
+      STACKS_CORE_EVENT_PORT: "3700"
+      STACKS_CORE_P2P_PORT: "20444"
+      STACKS_CORE_RPC_HOST: stacks-blockchain
+      STACKS_CORE_RPC_PORT: "20443"
+      STACKS_EXPORT_EVENTS_FILE: /tmp/event-replay/stacks-node-events.tsv
+      STACKS_LOG_DEBUG: "0"
+      STACKS_LOG_JSON: "0"
+      STACKS_SHUTDOWN_TIMEOUT: "1200"
+      STACKS_SIGNER_PORT: "30000"
+      STACKS_SIGNER_VERSION: 4.0.1
+      TBTC_HOST: bitcoin.regtest.hiro.so
+      TBTC_P2P_PORT: "18444"
+      TBTC_RPC_PORT: "18443"
+      TESTNET_SIGNER_PRIVATE_KEY: ""
+      V2_POX_MIN_AMOUNT_USTX: "90000000260"
+      VERBOSE: "false"
+    image: ghcr.io/stacks-network/stacks-core:4.0.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 20443
+        published: "20443"
+        protocol: tcp
+      - mode: ingress
+        target: 20444
+        published: "20444"
+        protocol: tcp
+      - mode: ingress
+        target: 9153
+        published: "9153"
+        protocol: tcp
+    restart: on-failure
+    volumes:
+      - type: bind
+        source: <REPO>/conf/mainnet
+        target: /src/stacks-blockchain
+        bind:
+          create_host_path: true
+      - type: bind
+        source: <REPO>/persistent-data/mainnet/stacks-blockchain
+        target: /root/stacks-blockchain/data
+        bind:
+          create_host_path: true
+  stacks-blockchain-api:
+    profiles:
+      - event-replay
+      - stacks-blockchain
+    command:
+      - npm
+      - run
+      - start
+    container_name: stacks-blockchain-api
+    environment:
+      AUTH_TOKEN: "1234"
+      BTC_HOST: bitcoin.mainnet.stacks.org
+      BTC_P2P_PORT: "8333"
+      BTC_RPC_PASS: foundation
+      BTC_RPC_PORT: "8332"
+      BTC_RPC_USER: stacks
+      DOCKER_NETWORK: stacks
+      EXPOSE_POSTGRES: "false"
+      GIT_TAG: master
+      NETWORK: mainnet
+      NGINX_PROXY_PORT: "80"
+      NODE_ENV: production
+      NODE_METRICS_PORT: "9153"
+      PG_DATABASE: postgres
+      PG_HOST: postgres
+      PG_PASSWORD: postgres
+      PG_PORT: "5432"
+      PG_SCHEMA: public
+      PG_SHMSIZE: 256MB
+      PG_USER: postgres
+      POSTGRES_VERSION: "17"
+      RUST_BACKTRACE: full
+      SIGNER_METRICS_PORT: "9154"
+      SIGNER_PRIVATE_KEY: ""
+      STACKS_BLOCKCHAIN_API_DB: pg
+      STACKS_BLOCKCHAIN_API_HOST: 0.0.0.0
+      STACKS_BLOCKCHAIN_API_PORT: "3999"
+      STACKS_BLOCKCHAIN_API_VERSION: 9.0.1
+      STACKS_BLOCKCHAIN_VERSION: 4.0.1
+      STACKS_CHAIN_ID: "0x00000001"
+      STACKS_CHAIN_ID_DEFAULT: "2147483648"
+      STACKS_CORE_EVENT_HOST: 0.0.0.0
+      STACKS_CORE_EVENT_PORT: "3700"
+      STACKS_CORE_P2P_PORT: "20444"
+      STACKS_CORE_RPC_HOST: stacks-blockchain
+      STACKS_CORE_RPC_PORT: "20443"
+      STACKS_EXPORT_EVENTS_FILE: /tmp/event-replay/stacks-node-events.tsv
+      STACKS_LOG_DEBUG: "0"
+      STACKS_LOG_JSON: "0"
+      STACKS_SHUTDOWN_TIMEOUT: "1200"
+      STACKS_SIGNER_PORT: "30000"
+      STACKS_SIGNER_VERSION: 4.0.1
+      TBTC_HOST: bitcoin.regtest.hiro.so
+      TBTC_P2P_PORT: "18444"
+      TBTC_RPC_PORT: "18443"
+      TESTNET_SIGNER_PRIVATE_KEY: ""
+      V2_POX_MIN_AMOUNT_USTX: "90000000260"
+      VERBOSE: "false"
+    image: hirosystems/stacks-blockchain-api:9.0.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3999
+        published: "3999"
+        protocol: tcp
+    restart: always
+    volumes:
+      - type: bind
+        source: <REPO>/persistent-data/bns-data
+        target: /bns-data
+        bind:
+          create_host_path: true
+      - type: bind
+        source: <REPO>/persistent-data/mainnet/event-replay
+        target: /tmp/event-replay
+        bind:
+          create_host_path: true
+  stacks-signer:
+    profiles:
+      - stacks-blockchain
+    command:
+      - /bin/stacks-signer
+      - run
+      - --config
+      - /src/stacks-signer/Signer.toml
+    container_name: stacks-signer
+    environment:
+      AUTH_TOKEN: "1234"
+      BTC_HOST: bitcoin.mainnet.stacks.org
+      BTC_P2P_PORT: "8333"
+      BTC_RPC_PASS: foundation
+      BTC_RPC_PORT: "8332"
+      BTC_RPC_USER: stacks
+      DOCKER_NETWORK: stacks
+      EXPOSE_POSTGRES: "false"
+      GIT_TAG: master
+      NETWORK: mainnet
+      NGINX_PROXY_PORT: "80"
+      NODE_ENV: production
+      NODE_METRICS_PORT: "9153"
+      PG_DATABASE: postgres
+      PG_HOST: postgres
+      PG_PASSWORD: postgres
+      PG_PORT: "5432"
+      PG_SCHEMA: public
+      PG_SHMSIZE: 256MB
+      PG_USER: postgres
+      POSTGRES_VERSION: "17"
+      RUST_BACKTRACE: full
+      SIGNER_METRICS_PORT: "9154"
+      SIGNER_PRIVATE_KEY: ""
+      STACKS_BLOCKCHAIN_API_DB: pg
+      STACKS_BLOCKCHAIN_API_HOST: 0.0.0.0
+      STACKS_BLOCKCHAIN_API_PORT: "3999"
+      STACKS_BLOCKCHAIN_API_VERSION: 9.0.1
+      STACKS_BLOCKCHAIN_VERSION: 4.0.1
+      STACKS_CHAIN_ID_DEFAULT: "2147483648"
+      STACKS_CORE_EVENT_HOST: 0.0.0.0
+      STACKS_CORE_EVENT_PORT: "3700"
+      STACKS_CORE_P2P_PORT: "20444"
+      STACKS_CORE_RPC_HOST: stacks-blockchain
+      STACKS_CORE_RPC_PORT: "20443"
+      STACKS_EXPORT_EVENTS_FILE: /tmp/event-replay/stacks-node-events.tsv
+      STACKS_LOG_DEBUG: "0"
+      STACKS_LOG_JSON: "0"
+      STACKS_SHUTDOWN_TIMEOUT: "1200"
+      STACKS_SIGNER_PORT: "30000"
+      STACKS_SIGNER_VERSION: 4.0.1
+      TBTC_HOST: bitcoin.regtest.hiro.so
+      TBTC_P2P_PORT: "18444"
+      TBTC_RPC_PORT: "18443"
+      TESTNET_SIGNER_PRIVATE_KEY: ""
+      V2_POX_MIN_AMOUNT_USTX: "90000000260"
+      VERBOSE: "false"
+    image: ghcr.io/stacks-network/stacks-signer:4.0.1
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 9154
+        published: "9154"
+        protocol: tcp
+    restart: on-failure
+    volumes:
+      - type: bind
+        source: <REPO>/conf/mainnet
+        target: /src/stacks-signer
+        bind:
+          create_host_path: true
+      - type: bind
+        source: <REPO>/persistent-data/mainnet/stacks-signer
+        target: /root/stacks-signer/data
+        bind:
+          create_host_path: true
+networks:
+  default:
+    name: stacks
+    ipam:
+      driver: default

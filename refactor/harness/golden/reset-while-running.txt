@@ -1,0 +1,11 @@
+=== scenario: reset-while-running
+--- args: ./manage.sh -n mainnet -a reset
+--- stub env: STUB_RUNNING=1
+--- pre: mkdir -p persistent-data/mainnet/postgres
+--- exit code: 1
+--- output (first 30 lines):
+[ Error ]        Can't reset while services are running
+[ Exit Error ]     Try again after running: ./manage.sh -n mainnet -a stop
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:

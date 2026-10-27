@@ -1,0 +1,14 @@
+=== scenario: stop-import-in-progress
+--- args: ./manage.sh -n mainnet -a stop
+--- stub env: STUB_RUNNING=1 STUB_API_LOG=import-started
+--- exit code: 1
+--- output (first 30 lines):
+[ Warn ]         Event import and playback is in progress
+[ Exit Error ]   Event-replay in progress. Refusing to stop services
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+--- filesystem side effects:

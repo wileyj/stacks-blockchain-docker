@@ -1,0 +1,40 @@
+=== scenario: start-mainnet-signer-proxy
+--- args: ./manage.sh -n mainnet -a start -f signer,proxy
+--- .env overrides: SIGNER_PRIVATE_KEY=deadbeef01
+--- exit code: 0
+--- output (first 30 lines):
+Creating persistent-data for mainnet 
+Starting all services for stacks-blockchain 
+[ Success ]      Brought up mainnet
+    Follow logs: ./manage.sh -n mainnet -a logs 
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker logs stacks-blockchain-api
+  docker logs stacks-blockchain-api --tail 20
+  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml -f <REPO>/compose-files/extra-services/signer.yaml -f <REPO>/compose-files/extra-services/proxy.yaml --profile stacks-blockchain up -d
+--- filesystem side effects:
+  + ./.env.save
+  + ./conf/mainnet/Config.toml
+  + ./conf/mainnet/Signer.toml
+  + ./persistent-data
+  + ./persistent-data/mainnet
+  + ./persistent-data/mainnet/event-replay
+  ~ ./conf/mainnet/Config.toml (created from ./conf/mainnet/Config.toml.sample) diff vs sample:
+      @@ -26,4 +26,4 @@
+       [[events_observer]]
+       endpoint = "stacks-blockchain-api:3700"
+       events_keys = ["*"]
+      -timeout_ms = 60_000
+      +timeout_ms = 60000
+  ~ ./conf/mainnet/Signer.toml (created from ./conf/mainnet/Signer.toml.sample) diff vs sample:
+      @@ -3,6 +3,6 @@
+       metrics_endpoint = "0.0.0.0:9154"
+       network = "mainnet"
+       db_path = "/root/stacks-signer/data/signer.sqlite"
+      -auth_password = ""
+      -stacks_private_key = ""
+      +auth_password = "1234"
+      +stacks_private_key = "deadbeef01"
+       block_proposal_timeout_ms = 180000

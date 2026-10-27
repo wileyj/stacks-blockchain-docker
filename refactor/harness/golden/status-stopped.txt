@@ -1,0 +1,9 @@
+=== scenario: status-stopped
+--- args: ./manage.sh -n mainnet -a status
+--- exit code: 1
+--- output (first 30 lines):
+
+Stacks Blockchain services are not running 
+--- docker calls:
+  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+--- filesystem side effects:

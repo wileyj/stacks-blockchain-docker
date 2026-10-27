@@ -1,0 +1,19 @@
+=== scenario: cli-unknown-arg
+--- args: ./manage.sh -n mainnet -a start -x
+--- exit code: 0
+--- output (first 30 lines):
+[ Error ]        Unknown arg supplied (-x)
+
+Usage:                    
+    ./manage.sh -n <network> -a <action> <optional args> 
+        -n|--network: [ mainnet | testnet | mocknet ] 
+        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ] 
+    optional args:        
+        -f|--flags: [ signer,proxy ] 
+        export: combined with 'logs' action, exports logs to a text file 
+    ex: ./manage.sh -n mainnet -a start -f proxy 
+    ex: ./manage.sh -n mainnet -a start -f signer,proxy 
+    ex: ./manage.sh --network mainnet --action start --flags proxy 
+    ex: ./manage.sh -n mainnet -a logs export 
+--- docker calls:
+--- filesystem side effects:
