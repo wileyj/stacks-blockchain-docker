@@ -131,6 +131,14 @@ Verified in 15.
 - a ruleset on the default branch: PRs, CODEOWNERS, signed commits, approval of the latest push, no bypass for Actions;
 - no auto-merge; read-only default workflow permissions; no PAT or App.
 
+**Tier 1 scope addition (owner, 2026-10-27):** besides the config templates, the automated job should also detect **new image tags**: `ghcr.io/stacks-network/stacks-core` (with `stacks-signer`, released in step) and `hirosystems/stacks-blockchain-api`. It would propose the `sample.env` pin bump in the same controlled way. Points to settle when tier 1 is built:
+- which tags count: stable semver only, no `-rc`, `latest` or `develop`;
+- that the stacks-core and signer versions match;
+- that a Hiro archive snapshot exists for the new pins (Q24), or else a warning in the PR body;
+- that the PR runs `check-config` plus the boot test against the new images.
+
+Until then, the read-only drift workflow could report new tags the same way (fail, no write). That's open for the owner to decide.
+
 **Before PR'ing any of this upstream:** evaluate whether `stx-labs/stacks-blockchain-docker` allows it at all. That covers the scheduled workflow, the Actions settings it needs, and possibly the vendored `conf/upstream/` approach itself. The repo settings and ruleset above are recommended for the fork regardless; they're GitHub UI/API changes, made only with the owner.
 
 ## Resuming on another machine

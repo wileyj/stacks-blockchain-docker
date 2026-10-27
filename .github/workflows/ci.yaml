@@ -5,7 +5,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master, chore/refactor]
+    branches: [master, chore/refactor, refactor-main]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     name: shellcheck + compose config
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       ## Error level only for now; the existing warnings are cleaned up in phase 1
       - name: shellcheck
         run: shellcheck -x -S error manage.sh scripts/*.sh tools/*.sh .github/ci/*.sh
@@ -31,7 +31,7 @@ jobs:
     name: manage.sh characterization harness
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: harness --check
         if: hashFiles('refactor/harness/run.sh') != ''
         run: refactor/harness/run.sh --check
@@ -40,7 +40,7 @@ jobs:
     name: check-config on rendered configs
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: render with the config job, validate with the pinned images
         run: .github/ci/check-config.sh mainnet testnet
 
@@ -57,6 +57,6 @@ jobs:
           - {network: testnet, profiles: "node,api"}
           - {network: mainnet, profiles: "node"}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: docker compose up -d, hold 180s, docker compose --profile '*' down
         run: .github/ci/compose-boot.sh ${{ matrix.network }} ${{ matrix.profiles }} 180
