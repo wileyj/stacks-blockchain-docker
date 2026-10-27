@@ -1,14 +1,17 @@
 # Script Options
 
+`./manage.sh` wraps the root [`compose.yaml`](../compose.yaml). Each section below also shows the plain
+`docker compose` equivalent (run from the repo root; `COMPOSE_PROFILES` in `.env` selects the services).
+
 ## Usage
 
 ```
 Usage:
     ./manage.sh -n <network> -a <action> <optional args>
-        -n|--network: [ mainnet | testnet | mocknet ]
+        -n|--network: [ mainnet | testnet ]
         -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]
     optional args:
-        -f|--flags: [ signer,proxy ]
+        -f|--flags: [ signer,proxy,postgres ]
         export: combined with 'logs' action, exports logs to a text file
     ex: ./manage.sh -n mainnet -a start -f proxy
 	ex: ./manage.sh -n mainnet -a start -f signer,proxy
@@ -52,26 +55,38 @@ Usage:
 
 ```bash
 ./manage.sh -n <network> -a stop
+# or: docker compose --profile '*' down
 ```
+
+The node is stopped first and gets up to `STACKS_SHUTDOWN_TIMEOUT` seconds to finish its run loop;
+don't pass `-t` to `down`, which would override that. A stack started with an older version of this
+repo (the `compose-files/` layout) is stopped the same way by `./manage.sh -a stop`.
 
 ---
 
 ### Event Replay
 
-#### Export stacks-blockchain-api events (_Not applicable for mocknet_)
+#### Export stacks-blockchain-api events
 
 ```bash
 ./manage.sh -n <network> -a export
 ./manage.sh -n <network> -a logs # check logs for completion
 ./manage.sh -n <network> -a restart
+# or, with the services stopped:
+#   EVENT_REPLAY_ACTION=export docker compose --profile event-replay up -d
+#   docker compose logs -f event-replay
 ```
 
-#### Replay stacks-blockchain-api events (_Not applicable for mocknet_)
+#### Replay stacks-blockchain-api events
+
+The events file must exist in this network's event-replay dir (default `./persistent-data/<network>/event-replay/`).
+The import wipes the API database first.
 
 ```bash
 ./manage.sh -n <network> -a import
 ./manage.sh -n <network> -a logs # check logs for completion
 ./manage.sh -n <network> -a restart
+# or, with the services stopped: EVENT_REPLAY_ACTION=import docker compose --profile event-replay up -d
 ```
 
 ---
@@ -103,7 +118,9 @@ _Note that each time you run this command the log files will be overwritten._
 
 ### Delete all chainstate data
 
-Some of the data in `./persistent-data/<network>` is owned by root, so this will need to run with **sudo** privileges.
+Empties this network's data dirs (the dirs themselves are kept, so dedicated mounts keep working) after
+listing them and asking for confirmation. Some of the data is owned by root, so this will need to run
+with **sudo** privileges.
 
 ```bash
 sudo ./manage.sh -n <network> -a reset

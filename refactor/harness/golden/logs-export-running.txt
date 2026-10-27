@@ -10,7 +10,7 @@ Exporting log data to text file
     - Exporting logs for postgres -> <REPO>/exported-logs/postgres.log 
 [ Success ]      Log export complete
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -f name=^stacks-blockchain$ -q
   docker logs stacks-blockchain
   docker ps -f name=^stacks-blockchain-api$ -q

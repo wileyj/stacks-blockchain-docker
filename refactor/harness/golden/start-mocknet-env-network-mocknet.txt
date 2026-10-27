@@ -3,46 +3,18 @@
 --- .env overrides: NETWORK=mocknet
 --- exit code: 0
 --- output (first 30 lines):
-Starting all services for stacks-blockchain 
-#STACKS_EXPORT_EVENTS_FILE=/tmp/event-replay/stacks-node-events.tsv
-STACKS_EXPORT_EVENTS_FILE=/tmp/event-replay/stacks-node-events.tsv
-[ Success ]      Brought up mocknet
-    Follow logs: ./manage.sh -n mocknet -a logs 
+[ Error ]        Network (mocknet) not supported
+
+Usage:                    
+    ./manage.sh -n <network> -a <action> <optional args> 
+        -n|--network: [ mainnet | testnet ] 
+        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ] 
+    optional args:        
+        -f|--flags: [ signer,proxy,postgres ] 
+        export: combined with 'logs' action, exports logs to a text file 
+    ex: ./manage.sh -n mainnet -a start -f proxy 
+    ex: ./manage.sh -n mainnet -a start -f signer,proxy 
+    ex: ./manage.sh --network mainnet --action start --flags proxy 
+    ex: ./manage.sh -n mainnet -a logs export 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mocknet.yaml --profile stacks-blockchain up -d
 --- filesystem side effects:
-  + ./.env.save
-  + ./conf/mocknet/Config.toml
-  ~ ./conf/mocknet/Config.toml (created from ./conf/mocknet/Config.toml.sample) diff vs sample:
-      @@ -4,21 +4,21 @@
-       wait_time_for_microblocks = 10000
-       use_test_genesis_chainstate = true
-       prometheus_bind = "0.0.0.0:9153"
-      -stacker = true
-      +#stacker = true
-       
-       [burnchain]
-       chain = "bitcoin"
-       mode = "mocknet"
-       commit_anchor_block_within = 5000
-       
-      -[[events_observer]]
-      -events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      -endpoint = "stacks-signer:30000"
-      +#[[events_observer]]
-      +#events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      +#endpoint = "stacks-signer:30000"
-       
-       [[events_observer]]
-       endpoint = "stacks-blockchain-api:3700"
-       events_keys = ["*"]
-      -timeout_ms = 60_000
-      +timeout_ms = 60000
-       
-       [[ustx_balance]]
-       # "mnemonic": "point approve language letter cargo rough similar wrap focus edge polar task olympic tobacco cinnamon drop lawn boring sort trade senior screen tiger climb",

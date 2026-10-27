@@ -6,15 +6,16 @@
 
 Usage:                    
     ./manage.sh -n <network> -a <action> <optional args> 
-        -n|--network: [ mainnet | testnet | mocknet ] 
+        -n|--network: [ mainnet | testnet ] 
         -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ] 
     optional args:        
-        -f|--flags: [ signer,proxy ] 
+        -f|--flags: [ signer,proxy,postgres ] 
         export: combined with 'logs' action, exports logs to a text file 
     ex: ./manage.sh -n mainnet -a start -f proxy 
     ex: ./manage.sh -n mainnet -a start -f signer,proxy 
     ex: ./manage.sh --network mainnet --action start --flags proxy 
     ex: ./manage.sh -n mainnet -a logs export 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
 --- filesystem side effects:

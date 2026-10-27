@@ -2,12 +2,14 @@
 --- args: ./manage.sh -n testnet -a export
 --- exit code: 0
 --- output (first 30 lines):
-[ Error ]        Missing event-replay file: <REPO>/persistent-data/mainnet/event-replay/stacks-node-events.tsv
 export Checking for an active event-replay import 
 export Checking for a completed event-replay import 
 export Checking for an active event-replay export 
 export Checking for a completed event-replay export 
-Creating persistent-data for testnet 
+Creating data dir <REPO>/persistent-data/testnet/stacks-blockchain 
+Creating data dir <REPO>/persistent-data/testnet/postgres 
+Creating data dir <REPO>/persistent-data/testnet/stacks-signer 
+Creating data dir <REPO>/persistent-data/testnet/event-replay 
 Starting all services for event-replay 
 [ Success ]      Brought up testnet
     Follow logs: ./manage.sh -n testnet -a logs 
@@ -17,45 +19,20 @@ Check logs for completion: ./manage.sh -n testnet -a logs
     - Look for a export log entry: "Export successful." 
 Once the operation is complete, restart the service with: ./manage.sh -n testnet -a restart 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
-  docker compose -f <REPO>/compose-files/common.yaml --profile event-replay ps -q
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/testnet.yaml -f <REPO>/compose-files/event-replay/api-export-events.yaml --profile event-replay up -d
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile event-replay up -d
 --- filesystem side effects:
   + ./.env.save
-  + ./conf/testnet/Config.toml
   + ./persistent-data
   + ./persistent-data/testnet
   + ./persistent-data/testnet/event-replay
-  ~ ./conf/testnet/Config.toml (created from ./conf/testnet/Config.toml.sample) diff vs sample:
-      @@ -9,7 +9,7 @@
-       bootstrap_node = "0348af7ce1b224476e8f042727af3f84dcf49a69bb3c9dd2a1afaa783acfffb729@seed.testnet.hiro.so:20444"
-       prometheus_bind = "0.0.0.0:9153"
-       miner = false
-      -stacker = true
-      +#stacker = true
-       pox_5_sbtc_contract = "SN3VMHXEN64ZZF71JQ5VESXDWTR301XTTXGF4J8F1.sbtc-token"
-       pox_5_sbtc_registry_contract = "SN3VMHXEN64ZZF71JQ5VESXDWTR301XTTXGF4J8F1.sbtc-registry"
-       pox_5_bond_admin = "ST1V2ASRWGR81W7GBN1Z4W2JQKXJWCADPVZG30X45"
-      @@ -26,14 +26,14 @@
-       auth_token = "1234"
-       private_neighbors = false
-       
-      -[[events_observer]]
-      -events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      -endpoint = "stacks-signer:30000"
-      +#[[events_observer]]
-      +#events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      +#endpoint = "stacks-signer:30000"
-       
-       [[events_observer]]
-       endpoint = "stacks-blockchain-api:3700"
-       events_keys = ["*"]
-      -timeout_ms = 60_000
-      +timeout_ms = 60000
-       
-       [[ustx_balance]]
-       address = "ST2QKZ4FKHAH1NQKYKYAYZPY440FEPK7GZ1R5HBP2"
+  + ./persistent-data/testnet/postgres
+  + ./persistent-data/testnet/stacks-blockchain
+  + ./persistent-data/testnet/stacks-signer

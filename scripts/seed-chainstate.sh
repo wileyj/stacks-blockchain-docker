@@ -132,7 +132,7 @@ require_tools() {
 check_network() {
 	local running=""
 	${VERBOSE} && log "Checking if default services are running"
-	running=$(docker compose -f "${SCRIPTPATH}/compose-files/common.yaml" --profile ${PROFILE} ps -q 2>/dev/null) || true
+	running=$(docker compose -f "${SCRIPTPATH}/compose.yaml" --profile '*' ps -q 2>/dev/null) || true
 	for name in stacks-blockchain stacks-blockchain-api postgres "${CONTAINER}"; do
 		running+=$(docker ps -q -f "name=^${name}$" 2>/dev/null) || true
 	done
@@ -320,7 +320,11 @@ require_tools
 check_network
 select_snapshot
 
-DATA_DIR="${SCRIPTPATH}/persistent-data/${NETWORK}"
+# Data locations as in compose.yaml: DATA_ROOT, or one path per component
+DATA_ROOT="${DATA_ROOT:-${SCRIPTPATH}/persistent-data}"
+[[ "${DATA_ROOT}" == /* ]] || DATA_ROOT="${SCRIPTPATH}/${DATA_ROOT#./}"
+CHAIN_DIR="${STACKS_DATA_DIR:-${DATA_ROOT}/${NETWORK}/stacks-blockchain}"
+PG_DIR="${POSTGRES_DATA_DIR:-${DATA_ROOT}/${NETWORK}/postgres}"
 PGDUMP_FILE="stacks-blockchain-api-pg-${SEL_PG}-${SEL_API}-${SEL_DATE}.dump"
 PGDUMP_URL="${ARCHIVE_URL}/${NETWORK}/stacks-blockchain-api-pg/${PGDUMP_FILE}"
 PGDUMP_DEST="${DOWNLOAD_DIR}/${PGDUMP_FILE}"
@@ -348,8 +352,8 @@ if [[ -n "${DOWNLOAD_FREE}" && -n "${CHAINDATA_SIZE}" && -n "${PGDUMP_SIZE}" ]] 
     log_warn "Not enough free space in ${DOWNLOAD_DIR} for both files. Set SEED_DOWNLOAD_DIR to a larger volume"
 fi
 log "  Then DELETE the contents of:"
-log "    ${DATA_DIR}/stacks-blockchain"
-log "    ${DATA_DIR}/postgres"
+log "    ${CHAIN_DIR}"
+log "    ${PG_DIR}"
 log "  and restore the snapshot into them"
 if ${DRY_RUN}; then
     log
@@ -366,24 +370,24 @@ fetch "${CHAINDATA_URL}" "${CHAINDATA_DEST}"
 
 # Both files are downloaded and verified: only now replace the existing data (D01)
 log
-log "Deleting existing data in ${DATA_DIR}/stacks-blockchain and ${DATA_DIR}/postgres"
-empty_dir "${DATA_DIR}/stacks-blockchain"
-empty_dir "${DATA_DIR}/postgres"
+log "Deleting existing data in ${CHAIN_DIR} and ${PG_DIR}"
+empty_dir "${CHAIN_DIR}"
+empty_dir "${PG_DIR}"
 
 log
-log "Extracting stacks-blockchain chainstate data to: ${DATA_DIR}/stacks-blockchain"
-tar -xvf "${CHAINDATA_DEST}" -C "${DATA_DIR}/stacks-blockchain/" || exit_error "${COLRED}Error${COLRESET} extracting stacks-blockchain chainstate data"
+log "Extracting stacks-blockchain chainstate data to: ${CHAIN_DIR}"
+tar -xvf "${CHAINDATA_DEST}" -C "${CHAIN_DIR}/" || exit_error "${COLRED}Error${COLRESET} extracting stacks-blockchain chainstate data"
 
 log
 log "  Chowning data to ${CURRENT_USER}"
-chown -R ${CURRENT_USER} "${DATA_DIR}" || exit_error "${COLRED}Error${COLRESET} setting file permissions"
+chown -R ${CURRENT_USER} "${CHAIN_DIR}" "${PG_DIR}" || exit_error "${COLRED}Error${COLRESET} setting file permissions"
 
 log
 log "Importing postgres data"
 log "  Starting postgres container: ${CONTAINER}"
 
 IMPORT_STARTED=true
-eval "docker run -d --rm --name ${CONTAINER} --shm-size=${PG_SHMSIZE:-256MB} -e POSTGRES_PASSWORD=${PG_PASSWORD} -v ${PGDUMP_DEST}:/tmp/stacks_node_postgres.dump -v ${DATA_DIR}/postgres:/var/lib/postgresql/data postgres:${POSTGRES_VERSION}-alpine > /dev/null  2>&1" || exit_error "${COLRED}Error${COLRESET} starting postgres container"
+eval "docker run -d --rm --name ${CONTAINER} --shm-size=${PG_SHMSIZE:-256MB} -e POSTGRES_PASSWORD=${PG_PASSWORD} -v ${PGDUMP_DEST}:/tmp/stacks_node_postgres.dump -v ${PG_DIR}:/var/lib/postgresql/data postgres:${POSTGRES_VERSION}-alpine > /dev/null  2>&1" || exit_error "${COLRED}Error${COLRESET} starting postgres container"
 log "  Sleeping for 15s to give time for Postgres to start"
 sleep 15
 

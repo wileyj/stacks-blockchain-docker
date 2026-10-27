@@ -44,7 +44,9 @@ BIN="${WORK}/bin"
 mkdir -p "${PRISTINE}" "${BIN}"
 
 # Copy the tracked files from the current working tree (not HEAD), excluding this folder
-( cd "${REPO_ROOT}" && git ls-files | grep -v '^refactor/' | tar -cf - -T - ) | tar -xf - -C "${PRISTINE}"
+# Tracked and new (not ignored) files that exist in the working tree, so uncommitted work is tested
+( cd "${REPO_ROOT}" && git ls-files --cached --others --exclude-standard | grep -v '^refactor/' \
+	| while IFS= read -r f; do [ -e "${f}" ] && printf '%s\n' "${f}"; done | tar -cf - -T - ) | tar -xf - -C "${PRISTINE}"
 
 # --- stubs -----------------------------------------------------------------------------
 cat > "${BIN}/docker" <<'EOF'
@@ -54,14 +56,19 @@ echo "docker $*" >> "${STUB_LOG}"
 case "$*" in
 	"compose version") echo "Docker Compose version v2.99.0-stub"; exit 0 ;;
 esac
+# Containers of the old compose-files/ project (label query) => running if STUB_LEGACY=1
+if [[ "$*" == *"label=com.docker.compose.project=compose-files"* ]]; then
+	[ "${STUB_LEGACY:-0}" = "1" ] && echo "c0ffee00000f"
+	exit 0
+fi
 # `docker compose ... ps -q` and `docker ps -f name=... -q` => running if STUB_RUNNING=1
 if [[ "$*" == *" ps -q"* || "$*" == "ps "* ]]; then
 	[ "${STUB_RUNNING:-0}" = "1" ] && echo "c0ffee000001"
 	exit 0
 fi
-# `docker logs stacks-blockchain-api` => canned lines selected by STUB_API_LOG keyword(s)
+# `docker logs event-replay` (the replay job's container) => canned lines selected by STUB_API_LOG keyword(s)
 #   import-started | import-done | export-started | export-done   (comma separated)
-if [[ "$1" == "logs" && "$2" == "stacks-blockchain-api" && -n "${STUB_API_LOG:-}" ]]; then
+if [[ "$1" == "logs" && "$2" == "event-replay" && -n "${STUB_API_LOG:-}" ]]; then
 	[[ "${STUB_API_LOG}" == *import-started* ]] && echo "Importing raw event requests"
 	[[ "${STUB_API_LOG}" == *export-started* ]] && echo "Export started"
 	[[ "${STUB_API_LOG}" == *import-done* ]] && echo "Event import and playback successful"
@@ -115,6 +122,7 @@ SCENARIOS=(
 	"stop-import-finished|STUB_RUNNING=1 STUB_API_LOG=import-started,import-done|||| -n mainnet -a stop"
 	"stop-mainnet-running|STUB_RUNNING=1|||| -n mainnet -a stop"
 	"stop-mocknet-running|STUB_RUNNING=1|||| -n mocknet -a stop"
+	"stop-legacy-layout-running|STUB_RUNNING=1 STUB_LEGACY=1|||| -n mainnet -a stop"
 	"stop-not-running||||| -n mainnet -a stop"
 	"stop-import-in-progress|STUB_RUNNING=1 STUB_API_LOG=import-started|||| -n mainnet -a stop"
 	"restart-not-running||||| -n mainnet -a restart -f proxy"
@@ -129,6 +137,7 @@ SCENARIOS=(
 	"upgrade-standalone||||| upgrade"
 	"import-mainnet||||| -n mainnet -a import"
 	"import-mainnet-running|STUB_RUNNING=1|||| -n mainnet -a import"
+	"import-mainnet-with-file||| mkdir -p persistent-data/mainnet/event-replay && touch persistent-data/mainnet/event-replay/stacks-node-events.tsv|| -n mainnet -a import"
 	"export-testnet||||| -n testnet -a export"
 	"export-events-file-unset||STACKS_EXPORT_EVENTS_FILE=||| -n mainnet -a export"
 	"bns-undefined||||| -n mainnet -a bns"

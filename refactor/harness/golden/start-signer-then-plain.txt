@@ -8,33 +8,11 @@ Starting all services for stacks-blockchain
 [ Success ]      Brought up mainnet
     Follow logs: ./manage.sh -n mainnet -a logs 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml --profile stacks-blockchain up -d
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile node --profile api up -d
 --- filesystem side effects:
-  ~ ./conf/mainnet/Config.toml (modified):
-      @@ -4,7 +4,7 @@
-       p2p_bind = "0.0.0.0:20444"
-       bootstrap_node = "02196f005965cebe6ddc3901b7b1cc1aa7a88f305bb8c5893456b8f9a605923893@seed.mainnet.hiro.so:20444"
-       prometheus_bind = "0.0.0.0:9153"
-      -stacker = true
-      +#stacker = true
-       
-       [burnchain]
-       chain = "bitcoin"
-      @@ -19,9 +19,9 @@
-       auth_token = "1234"
-       private_neighbors = false
-       
-      -[[events_observer]]
-      -events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      -endpoint = "stacks-signer:30000"
-      +#[[events_observer]]
-      +#events_keys = ["stackerdb", "block_proposal", "burn_blocks"]
-      +#endpoint = "stacks-signer:30000"
-       
-       [[events_observer]]
-       endpoint = "stacks-blockchain-api:3700"

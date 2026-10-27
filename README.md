@@ -5,7 +5,7 @@
 
 Run your own Stacks Blockchain node easily with just few commands.
 
-⚠️ **[docker compose version `2.2.2` or greater is required](./docs/docker.md)**
+⚠️ **[docker compose version `2.24.0` or greater is required](./docs/docker.md)** (`2.27.2` or later recommended)
 ⚠️ **On Ubuntu, you may need to run Docker commands with `sudo` unless your user is in the `docker` group**
 
 ---
@@ -21,6 +21,15 @@ cp sample.env .env
 
 ```bash
 ./manage.sh -n mainnet -a start
+```
+
+Or with plain Docker Compose, no script needed: set `NETWORK` and `COMPOSE_PROFILES` in `.env`, then
+
+```bash
+docker compose up -d                  # starts the services in COMPOSE_PROFILES (default: node,api)
+docker compose ps                     # status and health
+docker compose logs -f                # follow the logs
+docker compose --profile '*' down     # graceful stop (the node gets up to STACKS_SHUTDOWN_TIMEOUT)
 ```
 
 ### Sync from genesis (with signer)
@@ -78,8 +87,8 @@ sudo ./scripts/seed-chainstate.sh
 
 ## Accessing the services
 
-_For networks other than `mocknet`, downloading the initial headers can take several minutes. \
-Until the headers are downloaded, the `/v2/info` endpoints won't return any data. \
+_Downloading the initial Bitcoin headers can take several minutes. \
+Until the headers are downloaded, the `/v2/info` endpoints won't return any data (the API starts serving once the node does). \
 Use the command `./manage.sh -n <network> -a logs` to check the sync progress._
 
 **stacks-blockchain**:

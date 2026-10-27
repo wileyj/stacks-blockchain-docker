@@ -2,17 +2,12 @@
 --- args: ./manage.sh -n mainnet -a start -f signer
 --- exit code: 1
 --- output (first 30 lines):
-Creating persistent-data for mainnet 
 [ Exit Error ]   Signer private key not set!
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
-  docker logs stacks-blockchain-api
-  docker logs stacks-blockchain-api --tail 20
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker logs event-replay
+  docker logs event-replay --tail 20
 --- filesystem side effects:
-  + ./conf/mainnet/Config.toml
-  + ./persistent-data
-  + ./persistent-data/mainnet
-  + ./persistent-data/mainnet/event-replay
-  ~ ./conf/mainnet/Config.toml (created from ./conf/mainnet/Config.toml.sample) diff vs sample:

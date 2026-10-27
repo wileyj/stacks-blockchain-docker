@@ -7,16 +7,16 @@
 
 ## Verify `docker compose` is installed locally
 
-`docker compose` version `2.2.2` or greater is required:
+`docker compose` version `2.24.0` or greater is required (`2.27.2` or later recommended):
 
 ```bash
 $ docker compose version
-Docker Compose version v2.2.2
+Docker Compose version v2.27.2
 ```
 
 ## Install/Upgrade docker compose
 
-If the command is not found, or the version is less than `2.2.2`, follow the [official Docker Compose installation instructions](https://docs.docker.com/compose/install/) for your platform.
+If the command is not found, or the version is less than `2.24.0`, follow the [official Docker Compose installation instructions](https://docs.docker.com/compose/install/) for your platform.
 
 For Docker Desktop users (Mac/Windows), Compose is included by default.
 

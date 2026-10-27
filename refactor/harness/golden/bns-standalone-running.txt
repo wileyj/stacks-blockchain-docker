@@ -8,5 +8,5 @@
 [ Error ]        Refusing to download BNS data - services need to be stopped first
 [ Exit Error ]       Stop the services with: ./manage.sh -n mainnet -a stop
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
 --- filesystem side effects:

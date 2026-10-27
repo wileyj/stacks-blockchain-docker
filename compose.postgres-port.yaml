@@ -1,0 +1,7 @@
+## Optional: publish postgres on the host (manage.sh `-f postgres` or EXPOSE_POSTGRES=true).
+## With plain compose, add it in .env: COMPOSE_FILE=compose.yaml:compose.postgres-port.yaml
+## Bound to 127.0.0.1 by default; change the default PG_PASSWORD before binding it anywhere else.
+services:
+  postgres:
+    ports:
+      - ${POSTGRES_BIND_ADDR:-127.0.0.1}:${PG_PORT:-5432}:5432

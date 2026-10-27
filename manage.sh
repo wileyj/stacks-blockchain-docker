@@ -9,14 +9,11 @@ export NETWORK="mainnet"
 export ACTION=""
 export PROFILE="stacks-blockchain"
 SIGNER=false
-STACKS_CHAIN_ID="2147483648"
 STACKS_SHUTDOWN_TIMEOUT=1200 # default to 20 minutes, during sync it can take a long time to stop the runloop
 LOG_TAIL="100"
 FLAGS="proxy"
 LOG_OPTS="-f --tail ${LOG_TAIL}"
 VERBOSE=false
-REVERT_BNS=false
-REVERT_EVENTS=false
 
 # # Base colors
 # COLBLACK=$'\033[30m' # Black
@@ -59,7 +56,6 @@ DEBUG="[ DEBUG ] "
 ABS_PATH="$( cd -- "$(dirname "${0}")" >/dev/null 2>&1 ; pwd -P )"
 export SCRIPTPATH=${ABS_PATH}
 ENV_FILE="${SCRIPTPATH}/.env"
-ENV_FILE_TMP="${SCRIPTPATH}/.env.tmp"
 
 # If no .env file exists, copy the sample env and export the vars
 if [ ! -f "${ENV_FILE}" ];then
@@ -107,24 +103,20 @@ DEFAULT_SERVICES=(
 )
 ${VERBOSE} && log "DEFAULT_SERVICES: ${DEFAULT_SERVICES[*]}"
 
-# Populate list of supported flags based on files in ./compose-files/extra-services
-OPTIONAL_FLAGS=""
-SUPPORTED_FLAGS=()
-${VERBOSE} && log "Creating list of supported flags"
-for i in "${SCRIPTPATH}"/compose-files/extra-services/*.yaml; do
-	flag=$(basename "${i%.*}")
-	SUPPORTED_FLAGS+=("$flag")
-done
+# The stack is the root compose.yaml (plain `docker compose` works too); this script wraps it.
+#     - flags map to compose profiles (signer, proxy, bns) or the postgres port override file
+COMPOSE_FILE_MAIN="${SCRIPTPATH}/compose.yaml"
+COMPOSE_FILE_PG_PORT="${SCRIPTPATH}/compose.postgres-port.yaml"
+# Containers of a stack started from the old compose-files/ layout (a different compose project)
+LEGACY_PROJECT="compose-files"
+SUPPORTED_FLAGS=(signer proxy postgres bns)
 ${VERBOSE} && log "SUPPORTED_FLAGS: ${SUPPORTED_FLAGS[*]}"
-
-# Populate list of supported networks based on files in ./compose-files/networks
-${VERBOSE} && log "Creating list of supported networks"
-SUPPORTED_NETWORKS=()
-for i in "${SCRIPTPATH}"/compose-files/networks/*.yaml; do
-	network=$(basename "${i%.*}")
-	SUPPORTED_NETWORKS+=("${network}")
-done
+SUPPORTED_NETWORKS=(mainnet testnet)
 ${VERBOSE} && log "SUPPORTED_NETWORKS: ${SUPPORTED_NETWORKS[*]}"
+
+# Data locations, as in compose.yaml: DATA_ROOT or one path per component
+DATA_ROOT="${DATA_ROOT:-${SCRIPTPATH}/persistent-data}"
+[[ "${DATA_ROOT}" == /* ]] || DATA_ROOT="${SCRIPTPATH}/${DATA_ROOT#./}"
 
 # Hardcoded list of supported actions this script accepts
 ${VERBOSE} && log "Defining hardcoded list of supported actions"
@@ -152,10 +144,10 @@ usage() {
 	echo
 	log "Usage:"
 	log "    ${0} -n <network> -a <action> <optional args>"
-	log "        -n|--network: [ mainnet | testnet | mocknet ]"
+	log "        -n|--network: [ mainnet | testnet ]"
 	log "        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]"
 	log "    optional args:"
-	log "        -f|--flags: [ signer,proxy ]"
+	log "        -f|--flags: [ signer,proxy,postgres ]"
 	log "        export: combined with 'logs' action, exports logs to a text file"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f proxy${COLRESET}"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f signer,proxy${COLRESET}"
@@ -229,12 +221,16 @@ check_device() {
 # 	return 1
 # }
 
+# Containers still running from the old compose-files/ layout (another compose project)
+legacy_containers() {
+	docker ps -q --filter "label=com.docker.compose.project=${LEGACY_PROJECT}"
+}
+
 # Check if services are running
 check_network() {
-	local profile="${1}"
 	${VERBOSE} && log "Checking if default services are running"
-	# Determine if the services are already running
-	if [[ $(docker compose -f "${SCRIPTPATH}/compose-files/common.yaml" --profile ${profile} ps -q) ]]; then
+	# Determine if any service of the stack (any profile) or of the old layout is running
+	if [[ $(docker compose -f "${COMPOSE_FILE_MAIN}" --profile '*' ps -q) || $(legacy_containers) ]]; then
 		${VERBOSE} && log "Docker services have a pid"
 		# Docker is running, return success
 		return 0
@@ -252,7 +248,7 @@ check_event_replay(){
 	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
 		log "${ACTION} Checking for an active event-replay import"
 	fi
-	eval "docker logs stacks-blockchain-api 2>&1 | head -n20 | grep -q 'Importing raw event requests'" || test ${?} -eq 141
+	eval "docker logs event-replay 2>&1 | head -n20 | grep -q 'Importing raw event requests'" || test ${?} -eq 141
 	check_import_started="${?}"
 	${VERBOSE} && log "check_import_started: ${check_import_started}"
 	##
@@ -260,7 +256,7 @@ check_event_replay(){
 	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
 		log "${ACTION} Checking for a completed event-replay import"
 	fi
-	eval "docker logs stacks-blockchain-api --tail 20 2>&1 | grep -q 'Event import and playback successful'" || test ${?} -eq 141
+	eval "docker logs event-replay --tail 20 2>&1 | grep -q 'Event import and playback successful'" || test ${?} -eq 141
 	check_import_finished="${?}"
 	${VERBOSE} && log "check_import_finished: ${check_import_finished}"
 	##
@@ -268,7 +264,7 @@ check_event_replay(){
 	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
 		log "${ACTION} Checking for an active event-replay export"
 	fi
-	eval "docker logs stacks-blockchain-api 2>&1 | head -n20 | grep -q 'Export started'" || test ${?} -eq 141
+	eval "docker logs event-replay 2>&1 | head -n20 | grep -q 'Export started'" || test ${?} -eq 141
 	check_export_started="${?}"
 	${VERBOSE} && log "check_export_started: ${check_export_started}"
 	##
@@ -276,7 +272,7 @@ check_event_replay(){
 	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
 		log "${ACTION} Checking for a completed event-replay export"
 	fi
-	eval "docker logs stacks-blockchain-api --tail 20 2>&1 | grep -q 'Export successful'" || test ${?} -eq 141
+	eval "docker logs event-replay --tail 20 2>&1 | grep -q 'Export successful'" || test ${?} -eq 141
 	check_export_finished="${?}"
 	${VERBOSE} && log "check_export_finished: ${check_export_finished}"
 
@@ -332,9 +328,9 @@ check_bns() {
 	if [ "${BNS_IMPORT_DIR}" ]; then
 		${VERBOSE} && log "Defined BNS_IMPORT_DIR var"
 		local file_list=()
-		if [ -d "${SCRIPTPATH}/persistent-data${BNS_IMPORT_DIR}" ]; then
+		if [ -d "${DATA_ROOT}${BNS_IMPORT_DIR}" ]; then
 			${VERBOSE} && log "Found existing BNS_IMPORT_DIR directory"
-			for file in "${SCRIPTPATH}"/persistent-data"${BNS_IMPORT_DIR}"/*; do
+			for file in "${DATA_ROOT}${BNS_IMPORT_DIR}"/*; do
 				file_base=$(basename "${file%.*}")
 				file_list+=("$file_base")
 			done
@@ -348,256 +344,64 @@ check_bns() {
 	return 0
 }
 
-# adjust BNS_IMPORT_DIR for mocknet
-bns_import_env() {
-	if "${REVERT_BNS}"; then
-		${VERBOSE} && log "Uncommenting BNS_IMPORT_DIR in ${ENV_FILE}"
-		${VERBOSE} && log "Running: sed -i.tmp \"s/^#BNS_IMPORT_DIR=/BNS_IMPORT_DIR=/;\" ${ENV_FILE}"
-		$(sed -i.tmp "
-			s/^#BNS_IMPORT_DIR=/BNS_IMPORT_DIR=/;
-		" "${ENV_FILE}" 2>&1) || {
-			log_exit "Unable to update BNS_IMPORT_DIR value in .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Deleting temp .env file: ${ENV_FILE}.tmp${COLRESET}"
-		${VERBOSE} && log "${COLYELLOW}Grepping for BNS_IMPORT_DIR"
-		cat ${ENV_FILE} | grep "BNS_IMPORT_DIR"
-		$(rm "${ENV_FILE}.tmp" 2>&1) || {
-			log_exit "Unable to delete tmp .env file: ${COLCYAN}${ENV_FILE}.tmp${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Set REVERT_BNS to false${COLRESET}"
-		REVERT_BNS=false
-	fi
-	if [ "${BNS_IMPORT_DIR}" ];then
-		${VERBOSE} && log "Commenting BNS_IMPORT_DIR in ${ENV_FILE}"
-		${VERBOSE} && log "Running: sed -i.tmp \"s/^BNS_IMPORT_DIR=/#BNS_IMPORT_DIR=/;\" ${ENV_FILE}"
-		$(sed -i.tmp "
-			s/^BNS_IMPORT_DIR=/#BNS_IMPORT_DIR=/;
-		" "${ENV_FILE}" 2>&1) || {
-			log_exit "Unable to update BNS_IMPORT_DIR value in .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Deleting temp .env file: ${ENV_FILE}.tmp${COLRESET}"
-		${VERBOSE} && log "${COLYELLOW}Grepping for BNS_IMPORT_DIR"
-		cat ${ENV_FILE} | grep "BNS_IMPORT_DIR"
-		$(rm "${ENV_FILE}.tmp" 2>&1) || {
-			log_exit "Unable to delete tmp .env file: ${COLCYAN}${ENV_FILE}.tmp${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Set REVERT_BNS to true${COLRESET}"
-		REVERT_BNS=true
-		${VERBOSE} && log "${COLYELLOW}Unset BNS_IMPORT_DIR var${COLRESET}"
-		unset BNS_IMPORT_DIR
-	fi
-	${VERBOSE} && log "Sourcing updated .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-	source "${ENV_FILE}"
-	return 0
-}
-
-# adjust STACKS_EXPORT_EVENTS_FILE for mocknet
-events_file_env(){
-	if "${REVERT_EVENTS}"; then
-		${VERBOSE} && log "Uncommenting STACKS_EXPORT_EVENTS_FILE in ${ENV_FILE}"
-		${VERBOSE} && log "Running: sed -i.tmp \"s/^#STACKS_EXPORT_EVENTS_FILE=/STACKS_EXPORT_EVENTS_FILE=/;\" ${ENV_FILE}"
-		$(sed -i.tmp "
-			s/^#STACKS_EXPORT_EVENTS_FILE=/STACKS_EXPORT_EVENTS_FILE=/;
-		" "${ENV_FILE}" 2>&1) || {
-			log_exit "Unable to update STACKS_EXPORT_EVENTS_FILE value in .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Grepping for STACKS_EXPORT_EVENTS_FILE"
-		cat ${ENV_FILE} | grep "STACKS_EXPORT_EVENTS_FILE"
-		${VERBOSE} && log "${COLYELLOW}Deleting temp .env file: ${ENV_FILE}.tmp${COLRESET}"
-		$(rm "${ENV_FILE}.tmp" 2>&1) || {
-			log_exit "Unable to delete tmp .env file: ${COLCYAN}${ENV_FILE}.tmp${COLRESET}"
-		}
-		${VERBOSE} && log ${COLYELLOW}"Set REVERT_EVENTS to false${COLRESET}"
-		REVERT_EVENTS=false
-	fi
-	if [ "${STACKS_EXPORT_EVENTS_FILE}" ]; then
-		${VERBOSE} && log "Commenting STACKS_EXPORT_EVENTS_FILE in ${ENV_FILE_TMP}"
-		${VERBOSE} && log "Running: sed -i.tmp \"s/^STACKS_EXPORT_EVENTS_FILE=/#STACKS_EXPORT_EVENTS_FILE=/;\" ${ENV_FILE}"
-		$(sed -i.tmp "
-			s/^STACKS_EXPORT_EVENTS_FILE=/#STACKS_EXPORT_EVENTS_FILE=/;
-		" "${ENV_FILE}" 2>&1) || {
-			log_exit "Unable to update STACKS_EXPORT_EVENTS_FILE value in .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Grepping for STACKS_EXPORT_EVENTS_FILE"
-		cat ${ENV_FILE} | grep "STACKS_EXPORT_EVENTS_FILE"
-		${VERBOSE} && log "${COLYELLOW}Deleting temp .env file: ${ENV_FILE}.tmp${COLRESET}"
-		$(rm "${ENV_FILE}.tmp" 2>&1) || {
-			log_exit "Unable to delete tmp .env file: ${COLCYAN}${ENV_FILE}.tmp${COLRESET}"
-		}
-		${VERBOSE} && log "${COLYELLOW}Set REVERT_EVENTS to true${COLRESET}"
-		REVERT_EVENTS=true
-		${VERBOSE} && log "${COLYELLOW}Unset STACKS_EXPORT_EVENTS_FILE${COLRESET}"
-		unset STACKS_EXPORT_EVENTS_FILE
-	fi
-	${VERBOSE} && log "Sourcing updated .env file: ${COLCYAN}${ENV_FILE}${COLRESET}"
-	source "${ENV_FILE}"
-	return 0
-}
-
-# Function that updates Config.toml
-update_configs(){
-	if [ "${NETWORK}" == "testnet" ]; then
-		BTC_HOST=${TBTC_HOST}
-		BTC_RPC_USER=${TBTC_RPC_USER}
-		BTC_RPC_PASS=${TBTC_RPC_PASS}
-		BTC_RPC_PORT=${TBTC_RPC_PORT}
-		BTC_P2P_PORT=${TBTC_P2P_PORT}
-		SIGNER_PRIVATE_KEY=${TESTNET_SIGNER_PRIVATE_KEY}
-	fi
-	CONFIG_TOML="${SCRIPTPATH}/conf/${NETWORK}/Config.toml"
-	SIGNER_TOML="${SCRIPTPATH}/conf/${NETWORK}/Signer.toml"
-
-		## update Config.toml with signer options
-		if [ "${SIGNER}" != "true" ]; then
-			${VERBOSE} && log "${COLYELLOW}Disabling signer options in ${CONFIG_TOML}${COLRESET}"
-			sed -i.tmp "
-				/^\[\[events_observer\]\]/{
-					:a
-					N
-					/endpoint.*stacks-signer/!ba
-					s/^/#/mg
-				}
-				/^stacker = true/ s/^/#/
-			" "${CONFIG_TOML}" || {
-					log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
-			}
-    else
-			[ ! ${SIGNER_PRIVATE_KEY} ] && log_exit "Signer private key not set!"
-			${VERBOSE} && log "${COLYELLOW}Enabling signer options in ${CONFIG_TOML}${COLRESET}"
-			sed -i.tmp "
-				/^#\[\[events_observer\]\]/{
-					:a
-					N
-					/endpoint.*stacks-signer/!ba
-					s/^#//mg
-				}
-				/^#stacker = true/ s/^#//
-			" "${CONFIG_TOML}" || {
-					log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
-			}
-
-				## update Signer.toml with env vars
-			[[ ! -f "${SIGNER_TOML}" ]] && cp "${SIGNER_TOML}.sample" "${SIGNER_TOML}"
-			${VERBOSE} && log "${COLYELLOW}Updating values in ${SIGNER_TOML} from .env${COLRESET}"
-				$(sed -i.tmp "
-				/^node_host/s/.*/node_host = \"${STACKS_CORE_RPC_HOST}:${STACKS_CORE_RPC_PORT}\"/;
-				/^endpoint/s/.*/endpoint = \"0.0.0.0:${STACKS_SIGNER_PORT}\"/;
-				/^metrics_endpoint/s/.*/metrics_endpoint = \"0.0.0.0:${SIGNER_METRICS_PORT}\"/;
-				/^auth_password/s/.*/auth_password = \"${AUTH_TOKEN}\"/;
-				/^stacks_private_key/s/.*/stacks_private_key = \"${SIGNER_PRIVATE_KEY}\"/;
-			" "${SIGNER_TOML}" 2>&1) || {
-						log_exit "Unable to update values in Signer.toml file: ${COLCYAN}${SIGNER_TOML}${COLRESET}"
-				}
-				${VERBOSE} && log "${COLYELLOW}Deleting temp Signer.toml file: ${SIGNER_TOML}.tmp${COLRESET}"
-				$(rm "${SIGNER_TOML}.tmp" 2>&1) || {
-						log_exit "Unable to delete tmp Signer.toml file: ${COLCYAN}${SIGNER_TOML}.tmp${COLRESET}"
-				}
-    fi
-
-	# API observer timeout: the node backs off up to 3x this value while the API is unreachable,
-	# so a large value delays recovery after an API restart (D55). Not set in older .env files.
-	API_OBSERVER_TIMEOUT_MS=${API_OBSERVER_TIMEOUT_MS:-60000}
-	if [[ ! "${API_OBSERVER_TIMEOUT_MS}" =~ ^[0-9]+$ ]]; then
-		log_exit "API_OBSERVER_TIMEOUT_MS must be a number of milliseconds: ${COLCYAN}${API_OBSERVER_TIMEOUT_MS}${COLRESET}"
-	fi
-
-    ## update Config.toml with btc vars
-	[[ ! -f "${CONFIG_TOML}" ]] && cp "${CONFIG_TOML}.sample" "${CONFIG_TOML}"
-	${VERBOSE} && log "${COLYELLOW}Updating values in ${CONFIG_TOML} from .env${COLRESET}"
-    $(sed -i.tmp "
-		/^peer_host/s/.*/peer_host = \"${BTC_HOST}\"/;
-		/^username/s/.*/username = \"${BTC_RPC_USER}\"/;
-		/^password/s/.*/password = \"${BTC_RPC_PASS}\"/;
-		/^rpc_port/s/.*/rpc_port = ${BTC_RPC_PORT}/;
-		/^peer_port/s/.*/peer_port = ${BTC_P2P_PORT}/;
-		/^auth_token/s/.*/auth_token = \"${AUTH_TOKEN}\"/;
-		/^endpoint = \"stacks-signer/s/.*/endpoint = \"stacks-signer:${STACKS_SIGNER_PORT}\"/;
-		/^prometheus_bind/s/.*/prometheus_bind = \"0.0.0.0:${NODE_METRICS_PORT}\"/;
-		/^endpoint = \"stacks-blockchain-api/,/^\[/s/^timeout_ms.*/timeout_ms = ${API_OBSERVER_TIMEOUT_MS}/;
-	" "${CONFIG_TOML}" 2>&1) || {
-        log_exit "Unable to update values in Config.toml file: ${COLCYAN}${CONFIG_TOML}${COLRESET}"
-    }
-    ${VERBOSE} && log "${COLYELLOW}Deleting temp Config.toml file: ${CONFIG_TOML}.tmp${COLRESET}"
-    $(rm "${CONFIG_TOML}.tmp" 2>&1) || {
-        log_exit "Unable to delete tmp Config.toml file: ${COLCYAN}${CONFIG_TOML}.tmp${COLRESET}"
-    }
-	return 0
-}
-
-# Loop through supplied flags and set FLAGS for the yaml files to load
-#     - Silently fail if a flag isn't supported or a yaml file doesn't exist
-set_flags() {
-	local array="${*}"
-	local flags=""
-	local flag_path=""
-	${VERBOSE} && log "EXPOSE_POSTGRES: ${EXPOSE_POSTGRES}"
-	if [ "${EXPOSE_POSTGRES}" -a -f "${SCRIPTPATH}/compose-files/extra-services/postgres.yaml" ]; then
-		${EXPOSE_POSTGRES} && flags="-f ${SCRIPTPATH}/compose-files/extra-services/postgres.yaml"
-    fi
-	# Case to change the path of files based on profile
-	${VERBOSE} && log "Setting optional flags for cmd to eval"
+# Build the compose arguments for a manage.sh profile and flags (sets COMPOSE_ARGS)
+#     - stacks-blockchain: profiles node + api, plus signer/proxy from the flags
+#     - event-replay / bns: the job's own profile
+#     - all: every profile, used to stop, follow logs and pull
+#     - the postgres flag (or EXPOSE_POSTGRES=true) adds the port override file
+compose_args() {
+	local flags="${1}"
+	local profile="${2}"
+	local profiles=()
 	case ${profile} in
-		event-replay)
-			flag_path="event-replay"
+		stacks-blockchain)
+			profiles=(node api)
+			for flag in ${flags}; do
+				case ${flag} in
+					signer|proxy) profiles+=("${flag}") ;;
+				esac
+			done
 			;;
-		*)
-			flag_path="extra-services"
-			;;
+		all) profiles=("'*'") ;;
+		*) profiles=("${profile}") ;;
 	esac
-	${VERBOSE} && log "array: ${array}"
-	${VERBOSE} && log "flags: ${flags}"
-	${VERBOSE} && log "flag_path: ${flag_path}"
-	${VERBOSE} && log "profile: ${profile}"
-	for item in ${array}; do
-		${VERBOSE} && log "checking if ${item} is a supported flag"
-		if check_flags "${SUPPORTED_FLAGS[*]}" "${item}"; then
-			# Add to local flags if found in SUPPORTED_FLAGS array *and* the file exists in the expected path
-			#     - If no yaml file exists, silently fail
-			${VERBOSE} && log "Checking for compose file: ${SCRIPTPATH}/compose-files/${flag_path}/${item}.yaml"
-			if [ -f "${SCRIPTPATH}/compose-files/${flag_path}/${item}.yaml" ]; then
-				${VERBOSE} && log "compose file for ${item} is found"
-				flags="${flags} -f ${SCRIPTPATH}/compose-files/${flag_path}/${item}.yaml"
-			else
-				if [ "${profile}" != "stacks-blockchain" ];then
-					log_error "Missing compose file: ${COLCYAN}${SCRIPTPATH}/compose-files/${flag_path}/${item}.yaml${COLRESET}"
-					${VERBOSE} && log "calling usage function"
-					usage
-				fi
-			fi
-		fi
+	COMPOSE_ARGS="--env-file ${ENV_FILE} -f ${COMPOSE_FILE_MAIN}"
+	if [[ " ${flags} " == *" postgres "* || "${EXPOSE_POSTGRES}" == "true" ]]; then
+		COMPOSE_ARGS="${COMPOSE_ARGS} -f ${COMPOSE_FILE_PG_PORT}"
+	fi
+	for p in "${profiles[@]}"; do
+		COMPOSE_ARGS="${COMPOSE_ARGS} --profile ${p}"
 	done
-	OPTIONAL_FLAGS=${flags}
-	${VERBOSE} && log "OPTIONAL_FLAGS: ${OPTIONAL_FLAGS}"
+	${VERBOSE} && log "COMPOSE_ARGS: ${COMPOSE_ARGS}"
 	true
 }
 
-# Stop the services in a specific order, individually
-ordered_stop() {
-	${VERBOSE} && log "Starting the ordered stop of services"
-	if [[ -f "${SCRIPTPATH}/compose-files/common.yaml" && -f "${SCRIPTPATH}/compose-files/networks/${NETWORK}.yaml" ]]; then
-		if eval "docker compose -f ${SCRIPTPATH}/compose-files/common.yaml -f ${SCRIPTPATH}/compose-files/networks/${NETWORK}.yaml ps -q stacks-blockchain > /dev/null  2>&1"; then
-			${VERBOSE} && log "Services are running. continuing to stop services"
-			for service in "${DEFAULT_SERVICES[@]}"; do
-				if check_container "${service}"; then
-					local timeout=""
-                    log "${COLBOLD}Stopping ${service}${COLRESET}"
-					if [ "${service}" == "stacks-blockchain" ]; then
-                        #  Wait for the stacks blockchain runloop to end by waiting for STACKS_SHUTDOWN_TIMEOUT
-						timeout="-t ${STACKS_SHUTDOWN_TIMEOUT}"
-                        log "    Timeout is set for ${STACKS_SHUTDOWN_TIMEOUT} seconds"
-					fi
-                    # Compose a command to run using provided vars
-					cmd="docker compose --env-file ${ENV_FILE} -f ${SCRIPTPATH}/compose-files/common.yaml -f ${SCRIPTPATH}/compose-files/networks/${NETWORK}.yaml --profile ${PROFILE} stop ${timeout} ${service}"
-					${VERBOSE} && log "Running: ${cmd}"
-					eval "${cmd}"
-				fi
-			done
-			return 0
+# Data dirs for NETWORK, resolved like compose.yaml does (sets DATA_DIRS)
+data_dirs() {
+	DATA_DIRS=(
+		"${STACKS_DATA_DIR:-${DATA_ROOT}/${NETWORK}/stacks-blockchain}"
+		"${POSTGRES_DATA_DIR:-${DATA_ROOT}/${NETWORK}/postgres}"
+		"${SIGNER_DATA_DIR:-${DATA_ROOT}/${NETWORK}/stacks-signer}"
+		"${EVENT_REPLAY_DIR:-${DATA_ROOT}/${NETWORK}/event-replay}"
+	)
+}
+
+# Stop a stack started from the old compose-files/ layout: the node first (it may take up to
+# STACKS_SHUTDOWN_TIMEOUT to finish its run loop), then its observers and the rest
+legacy_stop() {
+	[[ $(legacy_containers) ]] || return 0
+	log "Stopping services started with the previous compose-files layout"
+	for service in stacks-blockchain stacks-signer stacks-blockchain-api postgres nginx; do
+		if check_container "${service}"; then
+			log "${COLBOLD}Stopping ${service}${COLRESET}"
+			local timeout=""
+			[ "${service}" == "stacks-blockchain" ] && timeout="-t ${STACKS_SHUTDOWN_TIMEOUT}"
+			eval "docker stop ${timeout} ${service}"
 		fi
-		# stacks-blockchain isn't running, so order of stop isn't important and we just run docker_down
-		log "${COLBOLD}Stacks Blockchain services are not running. Continuing${COLRESET}"
-		return 1
-	fi
+	done
+	eval "docker rm \$(docker ps -aq --filter label=com.docker.compose.project=${LEGACY_PROJECT})" >/dev/null 2>&1 || true
+	# The new project uses the same network name, which compose won't adopt from another project
+	eval "docker network rm \$(docker network ls -q --filter label=com.docker.compose.project=${LEGACY_PROJECT})" >/dev/null 2>&1 || true
 }
 
 # Configure options to bring services up
@@ -614,6 +418,12 @@ docker_up() {
 	if [[ "${FLAGS_ARRAY[*]}" == *"signer"* ]]; then
 		SIGNER=true
 	fi
+	# The config job also refuses an empty key; failing here writes nothing at all
+	if ${SIGNER}; then
+		local key="${SIGNER_PRIVATE_KEY}"
+		[ "${NETWORK}" == "testnet" ] && key="${TESTNET_SIGNER_PRIVATE_KEY}"
+		[ "${key}" ] || log_exit "Signer private key not set!"
+	fi
 
 	# Sanity checks before starting services
 	local param="-d"
@@ -621,41 +431,18 @@ docker_up() {
 		param=""
 	fi
 
-    # Create required config files and directories
-	[[ ! -f "${SCRIPTPATH}/conf/${NETWORK}/Config.toml" ]] && cp "${SCRIPTPATH}/conf/${NETWORK}/Config.toml.sample" "${SCRIPTPATH}/conf/${NETWORK}/Config.toml"
-	if [[ "${NETWORK}" == "private-testnet" ]]; then
-		[[ ! -f "${SCRIPTPATH}/conf/${NETWORK}/puppet-chain.toml" ]] && cp "${SCRIPTPATH}/conf/${NETWORK}/puppet-chain.toml.sample" "${SCRIPTPATH}/conf/${NETWORK}/puppet-chain.toml"
-	fi
-	if [[ "${NETWORK}" == "mainnet" ||  "${NETWORK}" == "testnet" ]];then
-		if [[ ! -d "${SCRIPTPATH}/persistent-data/${NETWORK}" ]];then
-			log "Creating persistent-data for ${NETWORK}"
-			mkdir -p "${SCRIPTPATH}/persistent-data/${NETWORK}/event-replay" >/dev/null 2>&1 || {
-				log_exit "Unable to create required dir: ${COLCYAN}${SCRIPTPATH}/persistent-data/${NETWORK}/event-replay${COLRESET}"
+	# Create the data dirs as the current user (docker would create missing ones as root).
+	#     Config.toml/Signer.toml are rendered by the compose `config` job on every start.
+	data_dirs
+	for dir in "${DATA_DIRS[@]}"; do
+		if [[ ! -d "${dir}" ]]; then
+			log "Creating data dir ${COLCYAN}${dir}${COLRESET}"
+			mkdir -p "${dir}" >/dev/null 2>&1 || {
+				log_exit "Unable to create required dir: ${COLCYAN}${dir}${COLRESET}"
 			}
-			${VERBOSE} && log "created (recursive) persistent-data dir ${SCRIPTPATH}/persistent-data/${NETWORK}/event-replay"
 		fi
-		${VERBOSE} && log "Using existing data dir: ${SCRIPTPATH}/persistent-data/${NETWORK}"
-	fi
+	done
 
-	update_configs
-
-    # # See if we can detect a Hiro API major version change requiring an event-replay import
-	# if check_api; then
-	# 	log_warn "    Required to perform a stacks-blockchain-api event-replay:"
-	# 	log_warn "        https://github.com/hirosystems/stacks-blockchain-api#event-replay "
-	# 	if confirm "Run event-replay now?"; then
-	# 		## Bring running services down
-	# 		${VERBOSE} && log "upgrade api: calling docker_down function"
-	# 		docker_down
-	# 		## Pull new images if available
-	# 		${VERBOSE} && log "upgrade api: docker_pull function"
-	# 		docker_pull
-	# 		## Run the event-replay import
-	# 		${VERBOSE} && log "upgrade api: event-replay import function"
-	# 		event_replay "import"
-	# 	fi
-	# 	log_exit "Event-replay is required"
-	# fi
 	${VERBOSE} && log "Copying ${COLCYAN}${ENV_FILE}${COLRESET} -> ${COLCYAN}${ENV_FILE}.save${COLRESET}"
 	$(cp -a "${ENV_FILE}" "${ENV_FILE}.save") >/dev/null 2>&1 || {
 		log_exit "Unable to copy ${COLCYAN}${ENV_FILE}${COLRESET} -> ${COLCYAN}${ENV_FILE}.save${COLRESET}"
@@ -678,18 +465,14 @@ docker_down() {
 	if ! check_event_replay;then
 		log_exit "Event-replay in progress. Refusing to stop services"
 	fi
-	if [[ "${NETWORK}" == "mainnet" || "${NETWORK}" == "testnet" ]] && [ "${PROFILE}" != "bns" ]; then
-		# if this is mainnet/testnet and the profile is not bns, stop the blockchain service first
-		${VERBOSE} && log "calling ordered_stop function"
-		if ordered_stop; then
-			# stop the rest of the services after the blockchain has been stopped
-			log "Stopping all services for ${COLYELLOW}${PROFILE}${COLRESET}"
-		fi
-	fi
-	# # stop the rest of the services after the blockchain has been stopped
+	# A stack started from the old compose-files/ layout is stopped container by container
+	${VERBOSE} && log "calling legacy_stop function"
+	legacy_stop
+	# compose stops the node first (its observers and postgres depend on it outliving them) and
+	# gives it stop_grace_period (STACKS_SHUTDOWN_TIMEOUT) to finish its run loop
 	log "${COLBOLD}Stopping all services${COLRESET}"
-	${VERBOSE} && log "calling run_docker function: run_docker \"down\" \"${SUPPORTED_FLAGS[*]}\" \"${PROFILE}\""
-	run_docker "down" "${SUPPORTED_FLAGS[*]}" "${PROFILE}"
+	${VERBOSE} && log "calling run_docker function: run_docker \"down\" \"${FLAGS_ARRAY[*]}\" \"all\""
+	run_docker "down" "${FLAGS_ARRAY[*]}" "all"
 }
 
 # Output the service logs
@@ -701,8 +484,8 @@ docker_logs(){
 		log_error "No ${COLYELLOW}${NETWORK}${COLRESET} services running"
 		usage
 	fi
-	${VERBOSE} && log "calling run_docker function: run_docker \"logs\" \"${SUPPORTED_FLAGS[*]}\" \"${PROFILE}\" \"${param}\""
-	run_docker "logs" "${SUPPORTED_FLAGS[*]}" "${PROFILE}" "${param}"
+	${VERBOSE} && log "calling run_docker function: run_docker \"logs\" \"\" \"all\" \"${param}\""
+	run_docker "logs" "" "all" "${param}"
 }
 
 # Export docker logs for the main services to files in ./exported-logs
@@ -737,8 +520,9 @@ logs_export(){
 # Pull any updated images that may have been published
 docker_pull() {
 	${VERBOSE} && log "pulling new images for ${PROFILE}"
-	${VERBOSE} && log "calling run_docker function: run_docker \"pull\" \"${SUPPORTED_FLAGS[*]}\" \"${PROFILE}\""
-	run_docker "pull" "${SUPPORTED_FLAGS[*]}" "${PROFILE}"
+	# The config job's image is built locally (on every start), not pulled
+	${VERBOSE} && log "calling run_docker function: run_docker \"pull\" \"\" \"all\" \"--ignore-buildable\""
+	run_docker "pull" "" "all" "--ignore-buildable"
 }
 
 # Check if the services are running
@@ -747,7 +531,7 @@ status() {
 		echo
 		log "${COLBOLD}Stacks Blockchain services are running${COLRESET}"
 		echo
-		${VERBOSE} && echo -e "$(docker compose -f "${SCRIPTPATH}/compose-files/common.yaml" ps)"
+		${VERBOSE} && echo -e "$(docker compose -f "${COMPOSE_FILE_MAIN}" --profile '*' ps)"
 		exit 0
 	else
 		echo
@@ -758,18 +542,30 @@ status() {
 }
 
 # Delete persistent data for NETWORK
+#     - empties each data dir but keeps the dir itself: it may be a mount point (D48, #152)
 reset_data() {
-	if [ -d "${SCRIPTPATH}/persistent-data/${NETWORK}" ]; then
-		${VERBOSE} && log "Found existing data: ${SCRIPTPATH}/persistent-data/${NETWORK}"
+	data_dirs
+	local existing=()
+	for dir in "${DATA_DIRS[@]}"; do
+		[[ -d "${dir}" ]] && existing+=("${dir}")
+	done
+	if [ ${#existing[@]} -gt 0 ]; then
+		${VERBOSE} && log "Found existing data: ${existing[*]}"
 		if ! check_network "${PROFILE}"; then
+			log "Data to delete for ${COLYELLOW}${NETWORK}${COLRESET}:"
+			for dir in "${existing[@]}"; do
+				log "    ${COLCYAN}${dir}${COLRESET}"
+			done
 			# Exit if operation isn't confirmed
 			confirm "Delete Persistent data for ${COLYELLOW}${NETWORK}${COLRESET}?" || log_exit "Delete Cancelled"
-			${VERBOSE} && log "  Running: rm -rf ${SCRIPTPATH}/persistent-data/${NETWORK}"
-			rm -rf "${SCRIPTPATH}/persistent-data/${NETWORK}"  >/dev/null 2>&1 || {
-				# Log error and exit if data wasn't deleted (permission denied etc)
-				log_error "Failed to remove ${COLCYAN}${SCRIPTPATH}/persistent-data/${NETWORK}${COLRESET}"
-				log_exit "  Re-run the command with sudo: ${COLCYAN}sudo ${0} -n ${NETWORK} -a reset${COLRESET}"
-			}
+			for dir in "${existing[@]}"; do
+				${VERBOSE} && log "  Running: find ${dir} -mindepth 1 -delete"
+				find "${dir}" -mindepth 1 -delete >/dev/null 2>&1 || {
+					# Log error and exit if data wasn't deleted (permission denied etc)
+					log_error "Failed to empty ${COLCYAN}${dir}${COLRESET}"
+					log_exit "  Re-run the command with sudo: ${COLCYAN}sudo ${0} -n ${NETWORK} -a reset${COLRESET}"
+				}
+			done
 			log_info "Persistent data deleted"
 			echo
 			exit 0
@@ -790,15 +586,10 @@ download_bns_data() {
 	if [ "${BNS_IMPORT_DIR}" ]; then
 		${VERBOSE} && log "Using defined BNS_IMPORT_DIR: ${BNS_IMPORT_DIR}"
 		if ! check_network "${PROFILE}"; then
-			SUPPORTED_FLAGS+=("bns")
 			FLAGS_ARRAY=(bns)
 			PROFILE="bns"
-			${VERBOSE} && log "SUPPORTED_FLAGS: ${SUPPORTED_FLAGS[*]}"
 			${VERBOSE} && log "FLAGS_ARRAY: ${FLAGS_ARRAY[*]}"
 			${VERBOSE} && log "PROFILE: ${PROFILE}"
-			if [ ! -f "${SCRIPTPATH}/compose-files/extra-services/bns.yaml" ]; then
-				log_exit "Missing bns compose file: ${COLCYAN}${SCRIPTPATH}/compose-files/extra-services/bns.yaml${COLRESET}"
-			fi
 			log "Downloading and extracting V1 bns-data"
 			${VERBOSE} && log "calling docker_up function"
 			docker_up
@@ -830,11 +621,14 @@ event_replay(){
 	fi
 	if [ "${STACKS_EXPORT_EVENTS_FILE}" != "" ]; then
 		${VERBOSE} && log "Using defined STACKS_EXPORT_EVENTS_FILE: ${STACKS_EXPORT_EVENTS_FILE}"
-		# Check if the event-replay file exists first
+		local action="${1}"
+		# The events file lives in this network's event-replay dir (D09: it was always mainnet's)
+		data_dirs
 		local tsv_file
-		tsv_file="${SCRIPTPATH}/persistent-data/mainnet/event-replay"/$(basename "${STACKS_EXPORT_EVENTS_FILE}")
-		if [ ! -f "${tsv_file}" ]; then
-			log_error "Missing event-replay file: ${COLCYAN}${tsv_file}${COLRESET}"
+		tsv_file="${DATA_DIRS[3]}"/$(basename "${STACKS_EXPORT_EVENTS_FILE}")
+		# An import needs the file; an export creates it
+		if [[ "${action}" == "import" && ! -f "${tsv_file}" ]]; then
+			log_exit "Missing event-replay file: ${COLCYAN}${tsv_file}${COLRESET}"
 		fi
 		${VERBOSE} && log "Using local event-replay file: ${tsv_file}"
 		if check_network "${PROFILE}"; then
@@ -842,16 +636,11 @@ event_replay(){
 			docker_down
 		fi
 		PROFILE="event-replay"
-		local action="${1}"
-		SUPPORTED_FLAGS+=("api-${action}-events")
-		FLAGS_ARRAY=("api-${action}-events")
+		FLAGS_ARRAY=()
+		# Read by the event-replay service in compose.yaml
+		export EVENT_REPLAY_ACTION="${action}"
 		${VERBOSE} && log "PROFILE: ${PROFILE}"
-		${VERBOSE} && log "SUPPPORTED_FLAGS: ${SUPPORTED_FLAGS[*]}"
-		${VERBOSE} && log "FLAGS_ARRAY: ${FLAGS_ARRAY[*]}"
-		if [ ! -f "${SCRIPTPATH}/compose-files/event-replay/api-${action}-events.yaml" ]; then
-			echo
-			log_exit "Missing events compose file: ${COLCYAN}${SCRIPTPATH}/compose-files/event-replay/api-${action}-events.yaml${COLRESET}"
-		fi
+		${VERBOSE} && log "EVENT_REPLAY_ACTION: ${EVENT_REPLAY_ACTION}"
 		${VERBOSE} && log "calling docker_up function"
 		docker_up
 		echo
@@ -878,22 +667,16 @@ run_docker() {
 	local flags="${2}"
 	local profile="${3}"
 	local param="${4}"
-	# # set any optional flags
-	set_flags "${flags}"
-	cmd="docker compose --env-file ${ENV_FILE} -f ${SCRIPTPATH}/compose-files/common.yaml -f ${SCRIPTPATH}/compose-files/networks/${NETWORK}.yaml ${OPTIONAL_FLAGS} --profile ${profile} ${action} ${param}"
+	# compose file(s) and profiles for this profile and flags
+	compose_args "${flags}" "${profile}"
+	cmd="docker compose ${COMPOSE_ARGS} ${action} ${param}"
 	# Log the command we'll be running for verbosity
 	${VERBOSE} && log "action: ${action}"
 	${VERBOSE} && log "profile: ${profile}"
 	${VERBOSE} && log "param: ${param}"
-	${VERBOSE} && log "OPTIONAL_FLAGS: ${OPTIONAL_FLAGS}"
 	${VERBOSE} && log "Running: eval ${cmd}"
-	if [[ "${NETWORK}" == "mocknet" && "${action}" == "up" ]]; then
-		${VERBOSE} && log "Disabling STACKS_EXPORT_EVENTS_FILE for ${NETWORK}"
-		events_file_env
-		${VERBOSE} && log "Disabling BNS_IMPORT_DIR for ${NETWORK}"
-		bns_import_env
-	fi
-	if [[ "${NETWORK}" == "mainnet" || "${NETWORK}" == "testnet" ]] && [ "${action}" == "up" ]; then
+	# The BNS files are needed by the API on a normal start, not by the bns job that downloads them
+	if [ "${action}" == "up" ] && [ "${profile}" == "stacks-blockchain" ]; then
 		${VERBOSE} && log "Checking if BNS_IMPORT_DIR is defined and has data"
 		if ! check_bns; then
 			log "Missing some BNS files"
@@ -905,12 +688,6 @@ run_docker() {
 	fi
 	eval "${cmd}"
 	local ret="${?}"
-	if [[ "${NETWORK}" == "mocknet" && "${action}" == "up" ]]; then
-		${VERBOSE} && log "Re-enabling STACKS_EXPORT_EVENTS_FILE for ${NETWORK}"
-		events_file_env
-		${VERBOSE} && log "Re-enabling BNS_IMPORT_DIR for ${NETWORK}"
-		bns_import_env
-	fi
 	${VERBOSE} && log "cmd returned: ${ret}"
 	# If return is not zero, it should be apparent. if it worked, print how to see the logs
 	if [[ "$ret" -eq 0 && "${action}" == "up" && "${profile}" != "bns" ]]; then
@@ -942,8 +719,6 @@ fi
 USER_ID=$(id -u "$(whoami)")
 export USER_ID="${USER_ID}"
 export DOCKER_NETWORK="${DOCKER_NETWORK}"
-export STACKS_CHAIN_ID=${STACKS_CHAIN_ID}
-${VERBOSE} && log "Exporting STACKS_CHAIN_ID: ${STACKS_CHAIN_ID}"
 ${VERBOSE} && log "Exporting USER_ID: ${USER_ID}"
 ${VERBOSE} && log "Exporting DOCKER_NETWORK: ${DOCKER_NETWORK}"
 
@@ -1048,7 +823,6 @@ do
 		;;
 	bns)
 		${VERBOSE} && log "calling download_bns_data function"
-		export STACKS_CHAIN_ID=${STACKS_CHAIN_ID}
 		download_bns_data
 		;;
 	-h|--help)
@@ -1084,25 +858,9 @@ if [ ! "${NETWORK}" ]; then
 	log_error "Missing ${COLYELLOW}-n|--network${COLRESET} arg"
 	${VERBOSE} && log "calling usage function"
 	usage
-else
-	case ${NETWORK} in
-		mainnet)
-			# Set chain id to mainnet
-			STACKS_CHAIN_ID="0x00000001"
-			;;
-		testnet)
-			# Set chain id to testnet
-			STACKS_CHAIN_ID="0x80000000"
-			;;
-		*)
-			# Default the chain id to mocknet
-			STACKS_CHAIN_ID="2147483648"
-			;;
-	esac
 fi
-${VERBOSE} && log "setting STACKS_CHAIN_ID based on arg: ${STACKS_CHAIN_ID}"
+# STACKS_CHAIN_ID reaches the API from conf/<network>/api.env
 ${VERBOSE} && log "exporting NETWORK: ${NETWORK}"
-export STACKS_CHAIN_ID=${STACKS_CHAIN_ID}
 export NETWORK=${NETWORK}
 export PG_SHMSIZE=${PG_SHMSIZE}
 

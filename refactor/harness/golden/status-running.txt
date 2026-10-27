@@ -6,5 +6,5 @@
 
 Stacks Blockchain services are running 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
 --- filesystem side effects:

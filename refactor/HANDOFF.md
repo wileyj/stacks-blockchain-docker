@@ -81,13 +81,35 @@ On `chore/refactor`, nothing committed. Verified locally on the Linux host: shel
 
 Still open: commit `refactor/` (the harness job needs it); the owner's `sample.env` pin bump; then phase 1.
 
-## Phase 1: in progress (2026-10-27)
+## Phase 1: done locally (2026-10-27), not yet committed
 
-Plan: four slices on `chore/refactor`, each with CI green.
-1. **`config` renderer (done):** `tools/config` (Go, go-toml v2). It renders `conf/<net>/Config.toml`/`Signer.toml` from the `*.sample` templates, `.env` and `*.overrides.toml`. Observers follow `COMPOSE_PROFILES`; `stacker` follows the signer profile; BTC RPC credentials are optional. Values are escaped. A missing signer key fails naming the variable. A hand-edited file is moved to `*.legacy` once. `Signer.toml` is 0600, and files are owned like `conf/`. The image is **built locally** by compose (owner choice); its build runs the unit tests, and its context is limited to sources + templates by `Dockerfile.dockerignore`.
-2. **Root `compose.yaml` (done, additive):** `name: stacks-blockchain-docker`; profiles `node`/`api`/`signer`/`proxy`; `config` → `config-check`/`signer-config-check`; healthchecks; `stop_grace_period`; per-service `environment:`; `conf/<net>/api.env` for `STACKS_CHAIN_ID`; data under `DATA_ROOT` / `*_DATA_DIR`; metrics on `METRICS_BIND_ADDR` (127.0.0.1). Container and network names are kept. `sample.env` gains `COMPOSE_PROFILES=node,api` and commented data/metrics settings. CI: root compose in the config matrix (38 combinations) and a compose-only boot job. See 15 "Phase 1 root compose.yaml" for the three dependency and healthcheck fixes found while testing.
-3. **Next:** switch `manage.sh` to wrap the root project, remove mocknet and `compose-files/`, re-record the goldens with reviewed deltas. Open points: `EXPOSE_POSTGRES` (an optional override file), and the BNS/event-replay jobs (slice 4).
-4. **Then:** jobs (BNS, event replay) and docs.
+The work waits on commit signing: the forwarded gpg agent went away after 22:56, and the commits are signed with the owner's smartcard key. Slices 1+2 are staged; slice 3 is in the working tree. Verified locally:
+- shellcheck: clean at error level
+- compose config: 20 combinations
+- harness: 52/52
+- `check-config`: every rendered profile set valid
+- compose-only boot: testnet `node,api`, and mainnet all profiles all healthy with `down` in 14 s
+- live event-replay job
+- actionlint: clean
+- no `sbd-*` leftovers
+
+| Slice | What |
+|---|---|
+| 1. `config` renderer | `tools/config` (Go, go-toml v2). Renders `conf/<net>/Config.toml`/`Signer.toml` from the `*.sample` templates, `.env` and `*.overrides.toml`. Observers and `stacker` follow `COMPOSE_PROFILES`; BTC RPC credentials are optional; values are escaped; a missing signer key fails naming the variable; a hand-edited file is moved to `*.legacy` once; `Signer.toml` is 0600. The image is built locally (`pull_policy: build`, so every `up` rebuilds it from cache); its build runs the unit tests, and its context is just sources + templates |
+| 2. Root `compose.yaml` | `name: stacks-blockchain-docker`. Profiles `node`/`api`/`signer`/`proxy`/`bns`/`event-replay`; `config` → `config-check`/`signer-config-check`; healthchecks; `stop_grace_period`; per-service env allow-lists (shared API anchor); `conf/<net>/api.env` (`STACKS_CHAIN_ID`); `DATA_ROOT`/`*_DATA_DIR`; metrics on `METRICS_BIND_ADDR`; `compose.postgres-port.yaml` (127.0.0.1). **The node starts after its observers (API, signer) and stops before them** (15 "Phase 1 root compose.yaml") |
+| 3. `manage.sh` on the root project | `compose-files/` and `conf/mocknet/` are removed. Flags map to profiles; the default start is still `node,api,proxy`. `sed` rendering, `ordered_stop` and the mocknet `.env` toggles are gone. A stack still running from the old layout is stopped node-first, and its containers/network are removed. `reset` empties dirs (D48) and follows `DATA_ROOT`. Import requires the file and export doesn't (D09); the replay dir is per network. The BNS-files check runs only for normal starts. The seed uses `compose.yaml` and the data-path variables. Goldens re-recorded after review; 2 new scenarios (old-layout stop, import with file) |
+| 4. Docs | README (plain-compose quickstart, Compose ≥ 2.24.0), `docs/usage.md` (compose equivalents), `docs/config.md` (generated configs + overrides, new variables), requirements/docker |
+
+Intended behavior changes, for the changelog:
+- **Configs are generated:** `Config.toml`/`Signer.toml` are rewritten on every start, and custom settings go in `*.overrides.toml`.
+- **Mocknet is removed.**
+- **Bindings:** metrics and postgres bind to 127.0.0.1.
+- **The project name changes** from `compose-files` to `stacks-blockchain-docker`; `manage.sh stop` handles a stack still running under the old one.
+
+Not done:
+- the Q27 sync script for the upstream templates (run by hand). **A CI job that opens PRs is deferred by the owner (2026-10-27):** no CI job gets write/create-branch permission by default; a read-only drift check is fine;
+- a live `manage.sh` boot (its fixed container names conflict with the `sbd-*`-only rule; the stubbed harness + compose boot cover it);
+- 12-monitoring-plan still describes the old overlay mechanism.
 
 ## Resuming on another machine
 1. Get `refactor/` there. The owner can commit and push the branch, or copy just the folder: `tar czf refactor.tgz refactor/`, then `scp` it and untar it in the clone (branch `chore/refactor` @ `d2e558c`).

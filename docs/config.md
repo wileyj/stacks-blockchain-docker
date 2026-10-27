@@ -1,13 +1,20 @@
 # Configuration
 
-The following files can be modified to personalize your node configuration, but generally most of them should be left as-is. All these files will be created from a sample copy if they don't exist at runtime (for example `.env` is created from [`sample.env`](../sample.env) ). \
-_Note: Burnchchain environment variables defined in `./env` will overwrite values in `Config.toml` files for mainnet/testnet when services are started_
+Settings live in `.env` (created from [`sample.env`](../sample.env) if missing). The node and signer
+configs, `./conf/<network>/Config.toml` and `Signer.toml`, are **generated** by the `config` job on every
+start from the templates in `./conf/<network>/*.sample` and the `.env` values; don't edit them, the next
+start overwrites them. Put your own settings in:
 
-- `.env`
-- `./conf/mainnet/Config.toml`
-- `./conf/mainnet/Signer.toml`
-- `./conf/testnet/Config.toml`
-- `./conf/testnet/Signer.toml`
+- `./conf/<network>/Config.overrides.toml`: any `stacks-node` setting. Tables are merged into the
+  generated file, keys you set win, and `[[events_observer]]` entries are added to the generated ones.
+- `./conf/<network>/Signer.overrides.toml`: the same for the signer.
+
+A hand-edited `Config.toml` from an earlier version is moved to `Config.toml.legacy` the first time the
+job runs; copy any custom settings from it into `Config.overrides.toml`.
+
+The `[[events_observer]]` blocks follow the enabled services: the API observer only with the `api`
+profile, the signer observer only with `signer`. Any configured observer is a liveness dependency of the
+node, which blocks delivering events while it is unreachable.
 
 ## Environment Variables
 
@@ -19,7 +26,12 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | ------------------------------- | ----------------------------------------------------- | ------------------------- |
 | `VERBOSE`                       | Enables verbose logging when `./manage.sh` is invoked | `false`                   |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
-| `EXPOSE_POSTGRES`               | Expose postgres service to the host OS                | `false`                   |
+| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`. `./manage.sh` selects them with `-f` instead | `node,api` |
+| `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer,event-replay}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
+| `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR`, `EVENT_REPLAY_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
+| `METRICS_BIND_ADDR`             | Host address the node and signer metrics ports are published on | `127.0.0.1` |
+| `EXPOSE_POSTGRES`               | Publish postgres on the host (`compose.postgres-port.yaml`; with plain compose add it to `COMPOSE_FILE`) | `false` |
+| `POSTGRES_BIND_ADDR`            | Host address for the published postgres port      | `127.0.0.1`               |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |
 | `STACKS_SIGNER_VERSION`         | Stacks Signer Docker image version                    | `latest released version` |
 | `STACKS_BLOCKCHAIN_API_VERSION` | Stacks Blockchain API Docker image version            | `latest released version` |

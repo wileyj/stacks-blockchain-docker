@@ -5,6 +5,6 @@
 --- output (first 30 lines):
 
 --- docker calls:
-  docker compose -f <REPO>/compose-files/common.yaml --profile stacks-blockchain ps -q
-  docker compose --env-file <REPO>/.env -f <REPO>/compose-files/common.yaml -f <REPO>/compose-files/networks/mainnet.yaml -f <REPO>/compose-files/extra-services/bns.yaml -f <REPO>/compose-files/extra-services/postgres.yaml -f <REPO>/compose-files/extra-services/proxy.yaml -f <REPO>/compose-files/extra-services/signer.yaml --profile stacks-blockchain logs -f --tail 100
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile * logs -f --tail 100
 --- filesystem side effects:

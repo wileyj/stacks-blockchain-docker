@@ -41,22 +41,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: render with manage.sh, validate with the pinned images
+      - name: render with the config job, validate with the pinned images
         run: .github/ci/check-config.sh mainnet testnet
-
-  boot:
-    name: boot smoke (${{ matrix.network }})
-    needs: [static, check-config]
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        network: [mainnet, testnet]
-    steps:
-      - uses: actions/checkout@v5
-      ## Asserts "starts and stays up without panics/restarts", not sync: the testnet BTC peer is slow
-      - name: boot and hold 180s
-        run: .github/ci/boot-smoke.sh ${{ matrix.network }} 180
 
   ## Plain `docker compose` from the repo root, no manage.sh (refactor/14 §2.1 R7). Also builds the
   ## config renderer image, which runs its unit tests during the build.

@@ -1,0 +1,36 @@
+=== scenario: stop-legacy-layout-running
+--- args: ./manage.sh -n mainnet -a stop
+--- stub env: STUB_RUNNING=1 STUB_LEGACY=1
+--- exit code: 0
+--- output (first 30 lines):
+Stopping services started with the previous compose-files layout 
+Stopping stacks-blockchain 
+Stopping stacks-signer 
+Stopping stacks-blockchain-api 
+Stopping postgres 
+Stopping nginx    
+Stopping all services 
+[ Success ]      Brought down mainnet
+--- docker calls:
+  docker compose -f <REPO>/compose.yaml --profile * ps -q
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker logs event-replay
+  docker logs event-replay --tail 20
+  docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker ps -f name=^stacks-blockchain$ -q
+  docker stop -t 1200 stacks-blockchain
+  docker ps -f name=^stacks-signer$ -q
+  docker stop stacks-signer
+  docker ps -f name=^stacks-blockchain-api$ -q
+  docker stop stacks-blockchain-api
+  docker ps -f name=^postgres$ -q
+  docker stop postgres
+  docker ps -f name=^nginx$ -q
+  docker stop nginx
+  docker ps -aq --filter label=com.docker.compose.project=compose-files
+  docker rm c0ffee00000f
+  docker network ls -q --filter label=com.docker.compose.project=compose-files
+  docker network rm c0ffee00000f
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile * down
+--- filesystem side effects:
