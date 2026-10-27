@@ -92,8 +92,10 @@ $ ./manage.sh -n <network> -a start
 ```
 
 **Alternatively** you can use the script `./scripts/seed-chainstate.sh` to attempt to use a public archive of the data. \
-_This requires at least 150GB of free disk and does take a long while to complete_. \
+_Mainnet needs about 400GB free for the downloads (set `SEED_DOWNLOAD_DIR` to use another volume) plus room for the extracted data, and it takes a long while to complete_. \
+The script picks the newest snapshot pair (chainstate + API dump from the same date) that matches the versions in `.env`, shows the plan and asks before deleting existing data. Nothing is deleted until both files are downloaded and verified.
 
 ```bash
-sudo ./scripts/seed-chainstate.sh
+./scripts/seed-chainstate.sh --dry-run   # show the selected snapshot and plan, change nothing
+sudo ./scripts/seed-chainstate.sh        # add --yes to skip the confirmation (required when not run from a terminal)
 ```

@@ -62,6 +62,7 @@ aria2c --version
 ```
 
 ```bash
+./scripts/seed-chainstate.sh --dry-run   # optional: show the snapshot it will use
 sudo ./scripts/seed-chainstate.sh
 ./manage.sh -n mainnet -a start
 ```
