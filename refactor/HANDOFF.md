@@ -141,6 +141,29 @@ Until then, the read-only drift workflow could report new tags the same way (fai
 
 **Before PR'ing any of this upstream:** evaluate whether `stx-labs/stacks-blockchain-docker` allows it at all. That covers the scheduled workflow, the Actions settings it needs, and possibly the vendored `conf/upstream/` approach itself. The repo settings and ruleset above are recommended for the fork regardless; they're GitHub UI/API changes, made only with the owner.
 
+## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
+
+**Branches:**
+- **`chore/refactor`** is the working branch. Direct signed pushes are allowed, and it has no rules.
+- **`refactor-main`** is the **default branch** (created from `e866c5d`). Ruleset `refactor-main protection` (id 25988043, no bypass actors):
+  - changes only through a PR, with 0 approvals (single maintainer);
+  - the 5 CI jobs must pass (`shellcheck + compose config`, `manage.sh characterization harness`, `check-config on rendered configs`, `compose-only boot (testnet node,api)`, `compose-only boot (mainnet node)`), pinned to the GitHub Actions app (15368);
+  - signed commits required;
+  - no force-push or deletion.
+
+  Verified: a signed direct push was rejected with GH013 "Changes must be made through a pull request". Work moves to it by PR from `chore/refactor`. The scheduled drift check runs from `refactor-main`.
+
+**Actions:**
+- only GitHub-owned actions are allowed (`actions/*`), and every action **must be pinned to a full commit SHA**; `actions/checkout` is pinned at v5.1.0 `fbc6f39…`;
+- the workflow token defaults to read-only, and Actions may not create or approve PRs;
+- workflows from outside contributors' fork PRs need approval.
+
+**Security:**
+- secret scanning and push protection were already on;
+- Dependabot **alerts** are on; Dependabot security-update PRs are **off** (consistent with no automated PRs for now).
+
+**Not changed:** merge methods (all allowed); auto-merge (off); no CODEOWNERS yet (add one if a second maintainer joins, together with required reviews and "prevent self-review").
+
 ## Resuming on another machine
 1. Get `refactor/` there. The owner can commit and push the branch, or copy just the folder: `tar czf refactor.tgz refactor/`, then `scp` it and untar it in the clone (branch `chore/refactor` @ `d2e558c`).
 2. Optionally copy the memory files (`MEMORY.md`, `refactor-plan-priorities.md`) into the new machine's `~/.claude/projects/<path-slug>/memory/`.
