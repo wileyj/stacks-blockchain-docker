@@ -42,3 +42,6 @@ conf/private-testnet/*.conf
 persistent-data/
 packer/vars.json
 exported-logs/
+# config job: per-user overrides and hand-edited configs moved aside
+conf/*/*.overrides.toml
+conf/*/*.legacy*
