@@ -406,6 +406,33 @@ Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing d
 
 `manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
 
+### Phase 3c mainnet seed, segmented downloads, native extraction — Linux x64, 2026-10-28 [V]
+
+Project `sbd-mainnet`, a repo copy on the 3 TB LV (`/stacks/temp/sbd-mainnet`, not the symlink), LAN BTC peer. Snapshot `20261027`: core 4.0.4, API 9.7.0, pg17 (the exact pins). Chainstate 261.4 GiB, dump 98.8 GiB.
+
+**Download throughput from `archive.hiro.so`** (20 s each, ranged GETs): 1 stream **44 MB/s**, 4 streams 113 MB/s, 8 → 105, 16 → 107 (the host's 1 Gbit/s link). `SEED_CONNECTIONS` defaults to 4.
+
+| Step | Run 1 (everything restored) | Run 2 (`--defer-index nft_events_asset_identifier_index`, local archives) |
+|---|---|---|
+| Download + hash (both files, 4 connections each) | **1 h 01 m** for 360 GiB (about 100–108 MiB/s combined); both `sha256 OK` | — (verified the kept files and their `.sha256` sidecars) |
+| Chainstate extraction (Go zstd + tar, in parallel with the restore) | 261 GiB in about 25 min; 215–270 MiB/s, falling to about 83 MiB/s while competing with the restore for the disk | about the same |
+| `pg_restore -j 8` | all but one index in about 2.5 h (the raw `event_observer_requests` table is a single-threaded `COPY` of about 2 h). Then `nft_events_asset_identifier_index` (hash) at **48.2% after 8 h 50 m**, single core, slowing; **stopped**, projected 18 h+ ([upstream-api-index-issue.md](./upstream-api-index-issue.md)) | **2 h 00 m 40 s** end to end, then swap |
+| Boot | — | **39 s** after `up`: node and API both at tip **9 331 754** (burn 973 432), API `ready`; postgres, API and node healthy with 0 restarts; `build-indexes` building the deferred index (CONCURRENTLY) |
+| API with the index still missing | — | `/extended/v1/block` 0.22 s. `/extended/v1/tokens/nft/mints?asset_identifier=…bitcoin-faces` **39 s**; a DLMM pool identifier **>60 s (timed out)**. The API **doesn't cancel the DB query when the client disconnects**: a test query was still running after 74 s and was cancelled by hand |
+
+An interrupted seed (run 1 stopped with `docker stop`) removed both staging dirs and left the data dirs as they were, and the archives and sidecars were intact. The temporary postgres didn't stop within `pg_ctl`'s 60 s (mid index build) and was killed, which is harmless because its staging dir is discarded.
+
+**Extraction benchmark** (the first 20 GiB of the mainnet chainstate, read from page cache, writing 52.3 GiB; during the mainnet restore):
+
+| Method | Time | Input rate |
+|---|---|---|
+| Host: `zstd -dc \| tar -x` (glibc, zstd 1.5.7, GNU tar 1.35) | 65.0 s / 65.5 s (55.7 s in an earlier batch) | about 314 MiB/s |
+| Container, Debian (glibc), same tools | **67.5 s** | 304 MiB/s, **within 4% of the host** |
+| Container, Alpine (musl), same tools | 109.1 s | 188 MiB/s, **about 40% slower** |
+| Go extractor (klauspost zstd + archive/tar), same batch as 55.7 s | 79.1 s | about 30% slower than native |
+
+So the container itself costs about nothing; the libc of the image matters a lot, and native tools beat the Go decoder. Following that, and the owner's preference for tools over code (archive formats change over time): **extraction is now GNU `tar -x -f`**, with tar picking zstd/xz/gzip itself and progress read from `/proc/<pid>/fdinfo`. The seed image moved to the **Debian** `postgres:<ver>` base, plus `ca-certificates` (missing from that image: HTTPS failed without it), `zstd` and `xz-utils`. The postgres uid is looked up at runtime (999 on Debian vs 70 on Alpine); the stack's Alpine postgres re-owns the data on start, which was verified on testnet: healthy, 0 restarts. A testnet seed with this image took **3 min 25 s** (5 min 22 s before), extracting at 221 MiB/s; node and API reached tip 857 879.
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |

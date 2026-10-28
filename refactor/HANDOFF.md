@@ -181,11 +181,18 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - **Cleanup:** downloads this run created are deleted unless `--keep-downloads`; your own files never are.
 - Fixes D01, D17–D19, D43, D48, D49 (no second read), D52, D53 for the compose path. `scripts/seed-chainstate.sh` stays as the fallback.
 
-**Not done (Q21 remainder):**
-- multi-connection segmented downloads (aria2-style; hashing while downloading needs a single stream, so it would mean a re-read);
-- a streaming download-to-extract mode without storing the archive;
-- `.tar.xz`/`.tar.gz` local archives;
-- a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
+**Phase 3c (2026-10-28), done** (15 "Phase 3c mainnet seed"):
+- **Mainnet seed verified:** a 1 h 01 m download (4 connections, about 100 MiB/s), then with `--defer-index nft_events_asset_identifier_index` a 2 h 00 m restore, and node + API up **39 s** after `up`. The deferred index builds in the background (`build-indexes`), and the stack in `/stacks/temp/sbd-mainnet` was left running for it.
+- **Native extraction:** GNU tar with zstd/xz/gzip, in the seed image now on **Debian** `postgres:<ver>` (+ `ca-certificates`); the postgres uid is looked up at runtime. Benchmarked: container on glibc = host; Alpine musl about 40% slower; the Go decoder about 30% slower.
+- **Deferred indexes:** `--defer-index` / `SEED_DEFER_INDEXES`, and the `build-indexes` job (api profile). Verified on testnet and mainnet.
+- **Restore tuning:** parallel maintenance workers, `SEED_PG_MAINTENANCE_MEM`, and restore progress (database size and current steps).
+
+**Earlier in Phase 3c:**
+- **Segmented downloads:** `SEED_CONNECTIONS` parallel Range requests per file (default 4), still hashed while downloading: chunks are read back in order from the page cache. Resumable through `<file>.parts`, retried per chunk, with a single-stream fallback if the server ignores ranges.
+- **Local formats:** `.tar.gz`/`.tgz`, `.tar.xz` and `.tar` archives.
+- **Mainnet run:** see 15 "Phase 3c".
+
+**Not done:** a streaming download-to-extract mode that doesn't store the archive (no resume, so of limited value).
 
 ## Phase 3b: reset job, done (2026-10-28)
 
@@ -204,6 +211,10 @@ Archive snapshots replace it as the way to resync. Removed:
 - `manage.sh`'s replay guard (4 `docker logs` calls on every start/stop) and the `event_replay` function. `-a import` and `-a export` now exit 1 pointing to `docker compose run --rm seed`.
 
 Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers recovery via seed and BNS v1 on API 9.x. Harness: the replay scenarios are replaced by `import-removed` and `export-removed` (48/48). D09/D37/D38 are closed; contract §A.7 and §A.23 retired.
+
+## Upstream tracking: API index rebuild (2026-10-28)
+
+[upstream-api-index-issue.md](./upstream-api-index-issue.md) tracks the 18 h+ rebuild of the API's hash index `nft_events_asset_identifier_index` on mainnet: evidence, suspected cause and the proposed fix (a partial B-tree index), plus a verification checklist. **Tracking only; nothing filed upstream yet.** Locally it's mitigated by the seed's `--defer-index` + `build-indexes` job.
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

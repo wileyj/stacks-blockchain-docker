@@ -126,6 +126,9 @@ docker compose run --rm seed --dry-run
 docker compose run --rm seed
 # with archives you already have, placed in SEED_DOWNLOAD_DIR:
 docker compose run --rm seed --chainstate <file>.tar.zst --pgdump <file>.dump
+# mainnet: build the slowest API index after the stack starts (see the README)
+docker compose run --rm seed --defer-index nft_events_asset_identifier_index
+docker compose logs -f build-indexes   # progress of deferred index builds once the stack runs
 ```
 
 ### Download BNS data

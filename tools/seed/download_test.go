@@ -70,9 +70,9 @@ func TestFetchHashesWhileDownloading(t *testing.T) {
 	srv, _ := archiveServer(t, data, 0)
 	d := downloader()
 	ctx := context.Background()
-	size, err := d.RemoteSize(ctx, srv.URL+"/file.tar.zst")
-	if err != nil || size != int64(len(data)) {
-		t.Fatalf("RemoteSize = %d, %v", size, err)
+	size, ranges, err := d.RemoteSize(ctx, srv.URL+"/file.tar.zst")
+	if err != nil || size != int64(len(data)) || !ranges {
+		t.Fatalf("RemoteSize = %d, ranges=%v, %v", size, ranges, err)
 	}
 	want, err := d.Checksum(ctx, srv.URL+"/file.sha256")
 	if err != nil {
@@ -142,5 +142,102 @@ func TestFetchMissingFileFailsFast(t *testing.T) {
 	_, err := downloader().Fetch(context.Background(), srv.URL+"/missing", filepath.Join(t.TempDir(), "x"), &Progress{Name: "x"})
 	if err == nil || requests.Load() != 1 {
 		t.Errorf("a 404 must fail without retries: err=%v requests=%d", err, requests.Load())
+	}
+}
+
+func segmented() *Downloader {
+	return &Downloader{Client: http.DefaultClient, Attempts: 3, Backoff: 10 * time.Millisecond, Connections: 4, ChunkSize: 100_000}
+}
+
+func TestSegmentedFetch(t *testing.T) {
+	data := testData(1_234_567) // not a multiple of the chunk size
+	srv, requests := archiveServer(t, data, 0)
+	dest := filepath.Join(t.TempDir(), "file.tar.zst")
+	got, err := segmented().Fetch(context.Background(), srv.URL+"/file.tar.zst", dest, &Progress{Name: "file", Total: int64(len(data))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if got != hex.EncodeToString(sum[:]) {
+		t.Errorf("segmented hash differs")
+	}
+	if b, _ := os.ReadFile(dest); !bytes.Equal(b, data) {
+		t.Errorf("segmented content differs")
+	}
+	if requests.Load() != 13 {
+		t.Errorf("want 13 chunk requests, got %d", requests.Load())
+	}
+	if _, err := os.Stat(dest + ".parts"); err == nil {
+		t.Errorf("the parts record must be removed when complete")
+	}
+}
+
+func TestSegmentedResumesFromPartsRecord(t *testing.T) {
+	data := testData(1_000_000)
+	srv, requests := archiveServer(t, data, 0)
+	dest := filepath.Join(t.TempDir(), "file.tar.zst")
+	// An earlier run finished chunks 0, 3 and 7 of 10 (the rest of the file is zeros)
+	partial := make([]byte, len(data))
+	parts := make([]byte, 10)
+	for _, i := range []int{0, 3, 7} {
+		copy(partial[i*100_000:(i+1)*100_000], data[i*100_000:(i+1)*100_000])
+		parts[i] = 1
+	}
+	os.WriteFile(dest, partial, 0o644)
+	os.WriteFile(dest+".parts", parts, 0o644)
+	got, err := segmented().Fetch(context.Background(), srv.URL+"/file.tar.zst", dest, &Progress{Name: "file", Total: int64(len(data))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if got != hex.EncodeToString(sum[:]) {
+		t.Errorf("resumed segmented hash differs")
+	}
+	if requests.Load() != 7 {
+		t.Errorf("only the 7 missing chunks may be fetched, got %d requests", requests.Load())
+	}
+}
+
+func TestSegmentedContinuesSingleStreamPartial(t *testing.T) {
+	data := testData(1_000_000)
+	srv, requests := archiveServer(t, data, 0)
+	dest := filepath.Join(t.TempDir(), "file.tar.zst")
+	os.WriteFile(dest, data[:350_000], 0o644) // chunks 0-2 complete, chunk 3 partial
+	got, err := segmented().Fetch(context.Background(), srv.URL+"/file.tar.zst", dest, &Progress{Name: "file", Total: int64(len(data))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if got != hex.EncodeToString(sum[:]) || requests.Load() != 7 {
+		t.Errorf("hash ok=%v, requests=%d (want 7)", got == hex.EncodeToString(sum[:]), requests.Load())
+	}
+}
+
+func TestSegmentedRetriesAFailingChunk(t *testing.T) {
+	data := testData(500_000)
+	sum := sha256.Sum256(data)
+	var failed atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") == "bytes=200000-299999" && !failed.Swap(true) {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		http.ServeContent(w, r, "f", time.Time{}, bytes.NewReader(data))
+	}))
+	defer srv.Close()
+	got, err := segmented().Fetch(context.Background(), srv.URL+"/f", filepath.Join(t.TempDir(), "f"), &Progress{Name: "f", Total: int64(len(data))})
+	if err != nil || got != hex.EncodeToString(sum[:]) || !failed.Load() {
+		t.Errorf("err=%v hashOK=%v failedOnce=%v", err, got == hex.EncodeToString(sum[:]), failed.Load())
+	}
+}
+
+func TestSegmentedPermanentFailureStops(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	_, err := segmented().Fetch(context.Background(), srv.URL+"/f", filepath.Join(t.TempDir(), "f"), &Progress{Name: "f", Total: 1_000_000})
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Errorf("a 403 must stop the download, got %v", err)
 	}
 }

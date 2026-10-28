@@ -18,9 +18,11 @@ import (
 // Downloader fetches archive files. Each file is hashed while it is written (no second read of a
 // multi-hundred-GB archive); a partial file is hashed once and then resumed with a Range request.
 type Downloader struct {
-	Client   *http.Client
-	Attempts int           // per file, each attempt resumes
-	Backoff  time.Duration // between attempts, doubled each time
+	Client      *http.Client
+	Attempts    int           // per file (single stream) or per chunk (segmented); each attempt resumes
+	Backoff     time.Duration // between attempts, doubled each time
+	Connections int           // parallel Range requests per file; 1 = single stream
+	ChunkSize   int64         // segmented download chunk (default 64 MiB)
 }
 
 // Progress counts bytes for the progress reporter.
@@ -31,29 +33,31 @@ type Progress struct {
 }
 
 // RemoteSize returns a file's size from a 1-byte ranged GET: archive.hiro.so answers HEAD with 403
-// (pre-signed redirects), so Content-Length from HEAD is unusable (refactor/09 D53).
-func (d *Downloader) RemoteSize(ctx context.Context, url string) (int64, error) {
+// (pre-signed redirects), so Content-Length from HEAD is unusable (refactor/09 D53). ranges reports
+// whether the server honours Range requests (needed for resuming and parallel downloads).
+func (d *Downloader) RemoteSize(ctx context.Context, url string) (size int64, ranges bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	req.Header.Set("Range", "bytes=0-0")
 	resp, err := d.Client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
 		cr := resp.Header.Get("Content-Range") // bytes 0-0/<total>
 		if i := strings.LastIndex(cr, "/"); i >= 0 {
-			return strconv.ParseInt(cr[i+1:], 10, 64)
+			size, err = strconv.ParseInt(cr[i+1:], 10, 64)
+			return size, err == nil, err
 		}
-		return 0, fmt.Errorf("%s: no total in Content-Range %q", url, cr)
+		return 0, false, fmt.Errorf("%s: no total in Content-Range %q", url, cr)
 	case http.StatusOK:
-		return resp.ContentLength, nil
+		return resp.ContentLength, false, nil
 	}
-	return 0, fmt.Errorf("%s: HTTP %s", url, resp.Status)
+	return 0, false, fmt.Errorf("%s: HTTP %s", url, resp.Status)
 }
 
 // Checksum reads a published .sha256 file ("<hex>  <name>").
@@ -81,8 +85,12 @@ func (d *Downloader) Checksum(ctx context.Context, url string) (string, error) {
 	return strings.ToLower(f[0]), nil
 }
 
-// Fetch downloads url to dest (resuming a partial dest) and returns the file's sha256.
+// Fetch downloads url to dest (resuming a partial dest) and returns the file's sha256. With a known
+// size and Connections > 1 it uses parallel Range requests (fetchSegmented), otherwise one stream.
 func (d *Downloader) Fetch(ctx context.Context, url, dest string, p *Progress) (string, error) {
+	if d.Connections > 1 && p.Total > 0 {
+		return d.fetchSegmented(ctx, url, dest, p)
+	}
 	backoff := d.Backoff
 	var lastErr error
 	for attempt := 1; attempt <= d.Attempts; attempt++ {
@@ -203,6 +211,9 @@ func Report(done <-chan struct{}, interval time.Duration, files ...*Progress) {
 		case <-t.C:
 			for i, p := range files {
 				n := p.Done.Load()
+				if p.Total > 0 && n >= p.Total && last[i] >= p.Total {
+					continue // finished and already reported at 100%
+				}
 				rate := float64(n-last[i]) / interval.Seconds()
 				last[i] = n
 				pct := ""
