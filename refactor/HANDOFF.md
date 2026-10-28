@@ -187,6 +187,15 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - `.tar.xz`/`.tar.gz` local archives;
 - a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
 
+## Event replay dropped (owner, 2026-10-28; Q28)
+
+Archive snapshots replace it as the way to resync. Removed:
+- the `event-replay` compose service and profile (postgres is in `api` only);
+- `STACKS_EXPORT_EVENTS_FILE` and the event-replay data dir;
+- `manage.sh`'s replay guard (4 `docker logs` calls on every start/stop) and the `event_replay` function. `-a import` and `-a export` now exit 1 pointing to `docker compose run --rm seed`.
+
+Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers recovery via seed and BNS v1 on API 9.x. Harness: the replay scenarios are replaced by `import-removed` and `export-removed` (48/48). D09/D37/D38 are closed; contract §A.7 and §A.23 retired.
+
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 
 The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.

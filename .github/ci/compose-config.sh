@@ -28,7 +28,7 @@ check() {
 # Every network x profile set, as COMPOSE_PROFILES in .env would select them; '*' is what `docker compose --profile '*' down` loads
 for n in mainnet testnet; do
 	export NETWORK="${n}"
-	for profiles in node api node,api node,api,signer node,api,signer,proxy signer node,api,monitoring bns event-replay seed '*'; do
+	for profiles in node api node,api node,api,signer node,api,signer,proxy signer node,api,monitoring bns seed '*'; do
 		export COMPOSE_PROFILES="${profiles}"
 		check "root ${n} ${profiles}" -f "${REPO}/compose.yaml"
 	done

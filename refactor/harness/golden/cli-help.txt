@@ -6,7 +6,7 @@
 Usage:                    
     ./manage.sh -n <network> -a <action> <optional args> 
         -n|--network: [ mainnet | testnet ] 
-        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ] 
+        -a|--action: [ start | stop | logs | reset | upgrade | bns ] 
     optional args:        
         -f|--flags: [ signer,proxy,postgres,monitoring ] 
         export: combined with 'logs' action, exports logs to a text file 

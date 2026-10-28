@@ -10,33 +10,6 @@
 ## set on its own (STACKS_DATA_DIR, POSTGRES_DATA_DIR, SIGNER_DATA_DIR), e.g. a dedicated disk.
 name: stacks-blockchain-docker
 
-## The API's settings from .env, shared by the API and the event-replay job
-x-api-environment: &api-environment
-  NODE_ENV:
-  PG_HOST:
-  PG_PORT:
-  PG_USER:
-  PG_PASSWORD:
-  PG_DATABASE:
-  PG_SCHEMA:
-  STACKS_CORE_EVENT_PORT:
-  STACKS_CORE_EVENT_HOST:
-  STACKS_BLOCKCHAIN_API_PORT:
-  STACKS_BLOCKCHAIN_API_HOST:
-  STACKS_BLOCKCHAIN_API_DB:
-  STACKS_CORE_RPC_HOST:
-  STACKS_CORE_RPC_PORT:
-  STACKS_EXPORT_EVENTS_FILE:
-  STACKS_API_ENABLE_FT_METADATA:
-  STACKS_API_ENABLE_NFT_METADATA:
-  STACKS_API_TOKEN_METADATA_ERROR_MODE:
-  STACKS_ADDRESS_CACHE_SIZE:
-  BNS_IMPORT_DIR:
-
-x-api-volumes: &api-volumes
-  - ${DATA_ROOT:-./persistent-data}/bns-data:/bns-data
-  - ${EVENT_REPLAY_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/event-replay}:/tmp/event-replay
-
 services:
   ## Renders the node/signer config from the templates, .env and the overrides files (tools/config)
   config:
@@ -102,7 +75,7 @@ services:
     image: postgres:${POSTGRES_VERSION:-17}-alpine
     container_name: postgres
     restart: on-failure
-    profiles: [api, event-replay]
+    profiles: [api]
     shm_size: ${PG_SHMSIZE:-256MB}
     environment:
       - POSTGRES_PASSWORD=${PG_PASSWORD:-postgres}
@@ -132,8 +105,28 @@ services:
     ## STACKS_CHAIN_ID per network
     env_file:
       - ./conf/${NETWORK:-mainnet}/api.env
-    environment: *api-environment
-    volumes: *api-volumes
+    environment:
+      - NODE_ENV
+      - PG_HOST
+      - PG_PORT
+      - PG_USER
+      - PG_PASSWORD
+      - PG_DATABASE
+      - PG_SCHEMA
+      - STACKS_CORE_EVENT_PORT
+      - STACKS_CORE_EVENT_HOST
+      - STACKS_BLOCKCHAIN_API_PORT
+      - STACKS_BLOCKCHAIN_API_HOST
+      - STACKS_BLOCKCHAIN_API_DB
+      - STACKS_CORE_RPC_HOST
+      - STACKS_CORE_RPC_PORT
+      - STACKS_API_ENABLE_FT_METADATA
+      - STACKS_API_ENABLE_NFT_METADATA
+      - STACKS_API_TOKEN_METADATA_ERROR_MODE
+      - STACKS_ADDRESS_CACHE_SIZE
+      - BNS_IMPORT_DIR
+    volumes:
+      - ${DATA_ROOT:-./persistent-data}/bns-data:/bns-data
     ## The API opens its event port (3700) right away but serves HTTP only once the node's RPC
     ## answers, i.e. after the node's initial Bitcoin header sync: same start period as the node
     healthcheck:
@@ -233,33 +226,6 @@ services:
       stacks-blockchain-api:
         condition: service_started
         required: false
-
-  ## API event replay (export or import of the node's event history). Run with the node and API
-  ## stopped: EVENT_REPLAY_ACTION=export|import docker compose --profile event-replay up -d
-  ## (import wipes the API database first). Follow it with: docker compose logs -f event-replay
-  event-replay:
-    image: hirosystems/stacks-blockchain-api:${STACKS_BLOCKCHAIN_API_VERSION:-latest}
-    container_name: event-replay
-    restart: "no"
-    profiles: [event-replay]
-    env_file:
-      - ./conf/${NETWORK:-mainnet}/api.env
-    environment:
-      <<: *api-environment
-      EVENT_REPLAY_ACTION:
-    command:
-      - /bin/sh
-      - -c
-      - |
-        case "$${EVENT_REPLAY_ACTION}" in
-          export) rm -f "$${STACKS_EXPORT_EVENTS_FILE}" && exec node ./lib/index.js export-events --file "$${STACKS_EXPORT_EVENTS_FILE}" ;;
-          import) exec node ./lib/index.js import-events --file "$${STACKS_EXPORT_EVENTS_FILE}" --wipe-db --force ;;
-          *) echo "event-replay: set EVENT_REPLAY_ACTION=export or import" >&2; exit 2 ;;
-        esac
-    volumes: *api-volumes
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   ## Seed the node + API from a Hiro archive snapshot (refactor/14 §9), with the stack stopped:
   ##   docker compose --profile '*' down && docker compose run --rm seed [--dry-run] [--yes]

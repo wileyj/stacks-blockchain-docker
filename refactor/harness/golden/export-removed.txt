@@ -1,0 +1,7 @@
+=== scenario: export-removed
+--- args: ./manage.sh -n testnet -a export
+--- exit code: 1
+--- output (first 30 lines):
+[ Exit Error ]   Event replay (import/export) was removed. To resync, seed from the Hiro archive: docker compose run --rm seed
+--- docker calls:
+--- filesystem side effects:

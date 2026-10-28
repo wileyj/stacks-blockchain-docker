@@ -66,15 +66,6 @@ if [[ "$*" == *" ps -q"* || "$*" == "ps "* ]]; then
 	[ "${STUB_RUNNING:-0}" = "1" ] && echo "c0ffee000001"
 	exit 0
 fi
-# `docker logs event-replay` (the replay job's container) => canned lines selected by STUB_API_LOG keyword(s)
-#   import-started | import-done | export-started | export-done   (comma separated)
-if [[ "$1" == "logs" && "$2" == "event-replay" && -n "${STUB_API_LOG:-}" ]]; then
-	[[ "${STUB_API_LOG}" == *import-started* ]] && echo "Importing raw event requests"
-	[[ "${STUB_API_LOG}" == *export-started* ]] && echo "Export started"
-	[[ "${STUB_API_LOG}" == *import-done* ]] && echo "Event import and playback successful"
-	[[ "${STUB_API_LOG}" == *export-done* ]] && echo "Export successful"
-	exit 0
-fi
 exit 0
 EOF
 cat > "${BIN}/uname" <<'EOF'
@@ -120,12 +111,10 @@ SCENARIOS=(
 	"start-flag-bns-rejected||||| -n mainnet -a start -f bns"
 	"start-flag-monitoring||SIGNER_PRIVATE_KEY=deadbeef01||| -n mainnet -a start -f signer,monitoring"
 	"start-signer-then-plain||SIGNER_PRIVATE_KEY=deadbeef01|./manage.sh -n mainnet -a start -f signer||-n mainnet -a start"
-	"stop-import-finished|STUB_RUNNING=1 STUB_API_LOG=import-started,import-done|||| -n mainnet -a stop"
 	"stop-mainnet-running|STUB_RUNNING=1|||| -n mainnet -a stop"
 	"stop-mocknet-running|STUB_RUNNING=1|||| -n mocknet -a stop"
 	"stop-legacy-layout-running|STUB_RUNNING=1 STUB_LEGACY=1|||| -n mainnet -a stop"
 	"stop-not-running||||| -n mainnet -a stop"
-	"stop-import-in-progress|STUB_RUNNING=1 STUB_API_LOG=import-started|||| -n mainnet -a stop"
 	"restart-not-running||||| -n mainnet -a restart -f proxy"
 	"status-running|STUB_RUNNING=1|||| -n mainnet -a status"
 	"status-stopped||||| -n mainnet -a status"
@@ -136,11 +125,8 @@ SCENARIOS=(
 	"logs-export-running|STUB_RUNNING=1|||| -n mainnet -a logs export"
 	"pull||||| -n mainnet -a pull"
 	"upgrade-standalone||||| upgrade"
-	"import-mainnet||||| -n mainnet -a import"
-	"import-mainnet-running|STUB_RUNNING=1|||| -n mainnet -a import"
-	"import-mainnet-with-file||| mkdir -p persistent-data/mainnet/event-replay && touch persistent-data/mainnet/event-replay/stacks-node-events.tsv|| -n mainnet -a import"
-	"export-testnet||||| -n testnet -a export"
-	"export-events-file-unset||STACKS_EXPORT_EVENTS_FILE=||| -n mainnet -a export"
+	"import-removed||||| -n mainnet -a import"
+	"export-removed||||| -n testnet -a export"
 	"bns-undefined||||| -n mainnet -a bns"
 	"bns-defined||BNS_IMPORT_DIR=/bns-data||| -n mainnet -a bns"
 	"bns-standalone-running|STUB_RUNNING=1|BNS_IMPORT_DIR=/bns-data||| bns"

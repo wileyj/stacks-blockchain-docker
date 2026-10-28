@@ -72,30 +72,10 @@ repo (the `compose-files/` layout) is stopped the same way by `./manage.sh -a st
 
 ---
 
-### Event Replay
+### Event Replay (removed)
 
-#### Export stacks-blockchain-api events
-
-```bash
-./manage.sh -n <network> -a export
-./manage.sh -n <network> -a logs # check logs for completion
-./manage.sh -n <network> -a restart
-# or, with the services stopped:
-#   EVENT_REPLAY_ACTION=export docker compose --profile event-replay up -d
-#   docker compose logs -f event-replay
-```
-
-#### Replay stacks-blockchain-api events
-
-The events file must exist in this network's event-replay dir (default `./persistent-data/<network>/event-replay/`).
-The import wipes the API database first.
-
-```bash
-./manage.sh -n <network> -a import
-./manage.sh -n <network> -a logs # check logs for completion
-./manage.sh -n <network> -a restart
-# or, with the services stopped: EVENT_REPLAY_ACTION=import docker compose --profile event-replay up -d
-```
+API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead
+(see "Seed from the Hiro archive" below).
 
 ---
 

@@ -6,8 +6,4 @@
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files
-  docker logs event-replay
-  docker logs event-replay --tail 20
-  docker logs event-replay
-  docker logs event-replay --tail 20
 --- filesystem side effects:
