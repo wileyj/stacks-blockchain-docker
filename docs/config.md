@@ -31,11 +31,12 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `VERBOSE`                       | Enables verbose logging when `./manage.sh` is invoked | `false`                   |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
 | `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`. `./manage.sh` selects them with `-f` instead | `node,api` |
-| `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer,event-replay}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
-| `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR`, `EVENT_REPLAY_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
+| `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
+| `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
 | `METRICS_BIND_ADDR`             | Host address the node and signer metrics ports are published on | `127.0.0.1` |
 | `EXPOSE_POSTGRES`               | Publish postgres on the host (`compose.postgres-port.yaml`; with plain compose add it to `COMPOSE_FILE`) | `false` |
 | `POSTGRES_BIND_ADDR`            | Host address for the published postgres port      | `127.0.0.1`               |
+| `MONITORING_BIND`, `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md) | `127.0.0.1`, `9090`, `3000`, empty, `15d`, `1`, `1` |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |
 | `STACKS_SIGNER_VERSION`         | Stacks Signer Docker image version                    | `latest released version` |
 | `STACKS_BLOCKCHAIN_API_VERSION` | Stacks Blockchain API Docker image version            | `latest released version` |
@@ -77,7 +78,6 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `STACKS_CORE_RPC_PORT`       | RPC port of the Stacks Blockchain service                                                                   | `20443`                                    |
 | `STACKS_CORE_P2P_PORT`       | P2P port of the Stacks Blockchain service                                                                   | `20444`                                    |
 | `API_OBSERVER_TIMEOUT_MS`    | Timeout (ms) for the node's event delivery to the API. The node retries a failed delivery with a backoff of up to 3x this value, so it also bounds how long the node stays blocked after the API comes back. Written to `timeout_ms` of the API `[[events_observer]]` in `Config.toml` on every start | `60000` |
-| `STACKS_EXPORT_EVENTS_FILE`  | File to store the API events file.<br>Locally this is stored at `./persistent-data/<network>/event-replay/` | `/tmp/event-replay/stacks-node-events.tsv` |
 
 #### Options commented out by default
 

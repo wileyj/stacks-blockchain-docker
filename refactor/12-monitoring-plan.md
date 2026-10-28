@@ -1,5 +1,7 @@
 # 12 — Monitoring Plan (HIGH PRIORITY)
 
+> **Implemented 2026-10-27 (phase 2M):** the `monitoring` profile in `compose.yaml`, `conf/monitoring/`, `docs/monitoring.md`. Deviations and verification: [HANDOFF](./HANDOFF.md) "Phase 2M", [15](./15-verification-log.md) "Phase 2M". cAdvisor needs **v0.55+** on Docker 29 with the containerd image store.
+
 **Goal:** a lightweight, opt-in monitoring stack that answers three questions without leaving the host:
 
 1. **Is the chain healthy?** Node synced? Tip advancing? API keeping up? Signer participating?
@@ -155,3 +157,4 @@ Integrating through the existing mechanisms keeps it opt-in and leaves the contr
 | M4 | Should monitoring be on by default once stable? | **Settled by the owner (2026-10-25):** Opt-in. Healthchecks are always on; users add `monitoring` to `COMPOSE_PROFILES`. Revisit after the #153 stress test measures overhead. |
 | M5 | Alertmanager / notifications | **Settled by the owner (2026-10-25):** Later phase. The first release ships Prometheus alert rules, visible in Prometheus and Grafana. Notification channels (Alertmanager or Grafana alerting) come after the stress test has tuned the thresholds. |
 | M6 | Enable the API's own Prometheus endpoint | **Settled by the owner (2026-10-25):** Nothing to decide: the API already serves `/metrics` on :9153 whenever `NODE_ENV=production` [V]. Add it as a scrape target. |
+| M7 | How much to collect | **Deferred by the owner (2026-10-27):** for now every series each exporter offers is stored, which is fine during development but too broad for a release. Before the first release with monitoring, trim to application-level metrics (node, API, signer) plus core system metrics, mainly storage, with possibly memory/CPU, via `metric_relabel_configs` keep-lists and exporter collector flags. Every series used by the rules and dashboards stays. Details in HANDOFF. |

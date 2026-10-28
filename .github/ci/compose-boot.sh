@@ -40,6 +40,11 @@ services:
   stacks-blockchain: {container_name: ${P}-stacks-blockchain, ports: !reset []}
   stacks-signer: {container_name: ${P}-stacks-signer, ports: !reset []}
   nginx: {container_name: ${P}-nginx, ports: !reset []}
+  prometheus: {container_name: ${P}-prometheus, ports: !reset []}
+  grafana: {container_name: ${P}-grafana, ports: !reset []}
+  cadvisor: {container_name: ${P}-cadvisor}
+  node-exporter: {container_name: ${P}-node-exporter}
+  postgres-exporter: {container_name: ${P}-postgres-exporter}
 EOF
 # Plain compose from the repo root; only -p and the rename override differ from a user's `up -d`
 dc() { (cd "${WORK}" && docker compose -p "${P}" -f compose.yaml -f "${TMP}/override.yaml" "$@"); }
@@ -72,7 +77,7 @@ done
 
 echo "== hold ${BOOT_SECS}s"
 sleep "${BOOT_SECS}"
-for svc in postgres stacks-blockchain-api stacks-blockchain stacks-signer nginx; do
+for svc in postgres stacks-blockchain-api stacks-blockchain stacks-signer nginx prometheus grafana cadvisor node-exporter postgres-exporter; do
 	cid=$(dc ps -aq "${svc}" 2>/dev/null || true)
 	[ -n "${cid}" ] || continue
 	read -r state restarts health < <(docker inspect -f '{{.State.Status}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "${cid}")

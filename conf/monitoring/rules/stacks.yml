@@ -1,0 +1,96 @@
+## Recording and alert rules for the stack (refactor/12). Alerts show in Prometheus and Grafana;
+## notification channels (Alertmanager) are a later phase (M5). Thresholds are starting points, to be
+## tuned by the phase 5 stress test. Unit tests: tools/monitoring/stacks.test.yml (promtool).
+groups:
+  - name: stacks-recording
+    rules:
+      - record: stacks:node_tip_height
+        expr: max(stacks_node_stacks_tip_height)
+      - record: stacks:api_tip_height
+        expr: max(stacks_block_height)
+      ## Blocks the API is behind the node (the "API stuck / missing parent block" case)
+      - record: stacks:api_lag
+        expr: stacks:node_tip_height - stacks:api_tip_height
+      - record: stacks:signer_lag
+        expr: stacks:node_tip_height - max(stacks_signer_stacks_node_height)
+
+  - name: stacks-alerts
+    rules:
+      ## The node serves no metrics during its initial Bitcoin header sync (minutes; longer on testnet), hence 15m
+      - alert: StacksTargetDown
+        expr: up == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.job }} metrics unreachable"
+          description: "Prometheus can't scrape {{ $labels.instance }} ({{ $labels.job }}). On a fresh node this is normal during the initial Bitcoin header sync."
+
+      ## Gated on outbound peers: right after RPC comes up the node has none for a few minutes (refactor/15 P1)
+      - alert: StacksTipStalled
+        expr: changes(stacks_node_stacks_tip_height[30m]) == 0 and stacks_node_neighbors_outbound > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Stacks tip hasn't advanced for 35 minutes"
+          description: "No new Stacks block in 35 minutes although the node has peers. A blocked event observer (API or signer down) stalls the node (refactor/09 D46/D55)."
+
+      - alert: StacksNoPeers
+        expr: stacks_node_neighbors_outbound == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Stacks node has no outbound peers"
+          description: "No outbound P2P neighbors for 15 minutes: check the bootstrap node and outbound connectivity on the P2P port."
+
+      - alert: StacksApiBehindNode
+        expr: stacks:api_lag > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "API is {{ $value }} blocks behind the node"
+          description: "The API isn't keeping up with the node's events. Check the API and postgres logs."
+
+      ## The signer's view of the node height moves in batches during a fast sync; 15m rides those out
+      - alert: StacksSignerBehindNode
+        expr: stacks:signer_lag > 5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Signer is {{ $value }} blocks behind the node"
+
+      - alert: StacksSignerRejecting
+        expr: |
+          sum(rate(stacks_signer_block_responses_sent{response_type="rejected"}[30m]))
+            / sum(rate(stacks_signer_block_responses_sent[30m])) > 0.5
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Signer rejects more than half of the block proposals"
+
+  - name: containers-and-host
+    rules:
+      - alert: ContainerRestarting
+        expr: changes(container_start_time_seconds{container_label_com_docker_compose_project="stacks-blockchain-docker"}[15m]) > 2
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} restarted more than twice in 15 minutes"
+
+      - alert: ContainerMemoryHigh
+        expr: |
+          sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_project="stacks-blockchain-docker"})
+            / scalar(max(machine_memory_bytes)) > 0.9
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} uses over 90% of host memory"
+
+      ## The most important host metric: the chainstate plus a seed's archives can exceed 1.5 TB
+      - alert: HostDiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs|autofs"}
+            / node_filesystem_size_bytes < 0.10
+          and node_filesystem_readonly == 0
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "Less than 10% free on {{ $labels.mountpoint }}"

@@ -1,8 +1,0 @@
-=== scenario: import-mainnet-running
---- args: ./manage.sh -n mainnet -a import
---- stub env: STUB_RUNNING=1
---- exit code: 1
---- output (first 30 lines):
-[ Exit Error ]   Missing event-replay file: <REPO>/persistent-data/mainnet/event-replay/stacks-node-events.tsv
---- docker calls:
---- filesystem side effects:

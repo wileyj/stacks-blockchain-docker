@@ -141,6 +141,90 @@ Until then, the read-only drift workflow could report new tags the same way (fai
 
 **Before PR'ing any of this upstream:** evaluate whether `stx-labs/stacks-blockchain-docker` allows it at all. That covers the scheduled workflow, the Actions settings it needs, and possibly the vendored `conf/upstream/` approach itself. The repo settings and ruleset above are recommended for the fork regardless; they're GitHub UI/API changes, made only with the owner.
 
+## Phase 2M monitoring: done (2026-10-27)
+
+**The `monitoring` profile** (opt in through `COMPOSE_PROFILES` or `./manage.sh -f monitoring`):
+- **Services:** Prometheus, Grafana, cAdvisor, node-exporter and postgres-exporter, as `stacks-*` containers.
+- **Exposure:** everything is published on `MONITORING_BIND` (127.0.0.1) and gets explicit environment only.
+- **Scrape targets** follow `COMPOSE_PROFILES`: the config job renders `conf/monitoring/prometheus.yml`.
+- **Rules:** `conf/monitoring/rules/stacks.yml` holds 13 recording and alert rules, with promtool unit tests in `tools/monitoring/`.
+- **Grafana:** 3 provisioned dashboards, a required admin password, no anonymous access.
+- **Switches** (0/1): `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS`.
+- **Data:** named volumes.
+- **Ordering:** the node stops before Prometheus.
+- **CI:** the compose matrix covers it, plus a secrets assertion, promtool check and tests, and dashboard JSON validation. A harness scenario covers `-f monitoring`.
+
+Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
+
+**Deviations from doc 12:**
+- named volumes instead of `persistent-data/monitoring`;
+- `stacks-` container prefixes;
+- the switches are 0/1 (Compose limitation);
+- cAdvisor is v0.55.1 (v0.52.1 sees no containers on Docker 29).
+
+**Not done:**
+- Alertmanager (M5, later);
+- the `stacks-status` companion (M3, deferred);
+- a burn-height/"behind Bitcoin" alert (needs a reference);
+- an event-age alert (the units of `stacks_last_event_timestamps` aren't verified);
+- trimming the collected series (M7, below).
+
+## Phase 3a: containerized seed job, done (2026-10-28)
+
+`tools/seed` (Go) in an image built from `postgres:${POSTGRES_VERSION}-alpine`; compose service `seed` (profile `seed`): `docker compose run --rm seed [--dry-run] [--yes] [--keep-downloads] [--chainstate F --pgdump F]`.
+- **Guard:** refuses while node, API, postgres or signer is up; their service names resolve on the network only while they run. Exit 1.
+- **Confirmation:** a TTY prompt, or `--yes`/`CONFIRM=yes`; without either it exits 2.
+- **Selection:** Q24 pair rule, the same as the shell script.
+- **Downloads:** both in parallel, single stream each, hashed while written, resumable (a partial file is re-hashed, then a Range request continues it). Retries with backoff; 404/403 fail fast. A `.sha256` sidecar is written next to each verified archive.
+- **Local mode:** the names are parsed and the same Q24 rules applied, then verified against the sidecar if present.
+- **Build:** chainstate extraction (streamed zstd + tar, path-escape checks, ownership from the data dir) and `pg_restore -j` (own temporary server: initdb with the `.env` user/password, bulk-load settings, renames) run in parallel, each into `<dir>/.seed-staging`. Only after both succeed are they swapped in. The dirs themselves are kept (D48); a failure leaves the old data.
+- **Cleanup:** downloads this run created are deleted unless `--keep-downloads`; your own files never are.
+- Fixes D01, D17–D19, D43, D48, D49 (no second read), D52, D53 for the compose path. `scripts/seed-chainstate.sh` stays as the fallback.
+
+**Not done (Q21 remainder):**
+- multi-connection segmented downloads (aria2-style; hashing while downloading needs a single stream, so it would mean a re-read);
+- a streaming download-to-extract mode without storing the archive;
+- `.tar.xz`/`.tar.gz` local archives;
+- a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
+
+## Event replay dropped (owner, 2026-10-28; Q28)
+
+Archive snapshots replace it as the way to resync. Removed:
+- the `event-replay` compose service and profile (postgres is in `api` only);
+- `STACKS_EXPORT_EVENTS_FILE` and the event-replay data dir;
+- `manage.sh`'s replay guard (4 `docker logs` calls on every start/stop) and the `event_replay` function. `-a import` and `-a export` now exit 1 pointing to `docker compose run --rm seed`.
+
+Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers recovery via seed and BNS v1 on API 9.x. Harness: the replay scenarios are replaced by `import-removed` and `export-removed` (48/48). D09/D37/D38 are closed; contract §A.7 and §A.23 retired.
+
+## Deferred: pare down metrics collection before release (owner, 2026-10-27)
+
+The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.
+
+- **Keep:** application-level metrics (stacks-node, API, signer) plus a small set of core system metrics, mainly storage (filesystem free/size, disk I/O), with possibly memory and CPU per container and for the host.
+- **How:**
+  - `metric_relabel_configs` keep-lists per scrape job, rendered by the config job;
+  - postgres-exporter `--collector.*` flags / `--disable-default-metrics`;
+  - node-exporter `--collector.disable-defaults` plus the collectors that are needed (`filesystem`, `diskstats`, `meminfo`, `loadavg`, `cpu`);
+  - a narrower cAdvisor `--enable_metrics`.
+- **Constraint:** keep every series used by `conf/monitoring/rules/stacks.yml` and the three dashboards. The promtool tests and a "every panel query returns data" check (as done in the live test) guard this.
+- **When:** before the first release that ships monitoring. Sizing input comes from the phase 5 stress test (series count, TSDB size, RAM).
+
+## Deferred: postgres exposure and the network model (owner, 2026-10-27)
+
+Today postgres is reachable from the host only through the optional `-f postgres` / `EXPOSE_POSTGRES=true` override (`compose.postgres-port.yaml`, bound to 127.0.0.1). The owner wants to revisit this:
+- **Option A: drop the flag** and keep postgres internal; anyone needing it uses `docker compose exec postgres psql` or a tunnel.
+- **Option B: Docker host networking** (`network_mode: host`) instead of the project network.
+
+Trade-offs to weigh for B:
+- **What gets simpler:** no per-port publishing, so flags like this one go away.
+- **Bind addresses become the only protection.** Every listening port is on the host directly, so each service's own setting has to be right: `rpc_bind`, `prometheus_bind`, the API's `STACKS_*_HOST`, postgres `listen_addresses`, Prometheus and Grafana. A wrong default would be publicly reachable.
+- **Service-name DNS is lost** (`stacks-blockchain-api:3700`, `postgres`, `prometheus`, `node-exporter`, ...). The renderer, observers, scrape targets and the API's DB host would move to `127.0.0.1:<port>`.
+- **Port clashes:** two services can't share a port, as the API and the node do today with 9153 for metrics.
+- **Portability:** on Linux it's native. On Docker Desktop, host networking is a newer opt-in feature, which matters for tier-1 macOS (Q18).
+- **Container names** and the `DOCKER_NETWORK` contract (§A.19–20) would change.
+
+Decide before the first release; it affects compose.yaml, the renderer, the monitoring targets and the docs.
+
 ## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
 
 **Branches:**

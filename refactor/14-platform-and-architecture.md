@@ -240,6 +240,9 @@ Where the time actually goes, and what can be done:
 
 ### 9.3 Seed as a containerized job
 
+> **Implemented 2026-10-28 (phase 3a):** `tools/seed`, compose service `seed`. Status and the remaining items: [HANDOFF](./HANDOFF.md) "Phase 3a"; verification: [15](./15-verification-log.md) "Phase 3a".
+
+
 **Load-local-archive mode (Q16):** `docker compose run --rm -v /path/to/archive.tar.xz:/in/archive:ro seed --from /in/archive [--sha256 <hex>]`, or `sbd seed --from <file>`. It streams a local tar.xz/zst/gz (several hundred GB) into staging on the target filesystem, optionally verifies a digest, and swaps it in. The same guards apply. There is no copy of the archive, but staging needs room for the extracted data.
 
 `docker compose run --rm seed [--yes] [--jobs N]` (or `sbd seed --network mainnet …`, which runs exactly that) starts a `seed` container (curl/HTTP client, zstd, tar, postgres client tools matching `POSTGRES_VERSION`) that:
@@ -282,7 +285,7 @@ Target commands for running everything **without** the CLI, run from the repo ro
 | Re-render config after edits | `docker compose up -d` (the `config` job re-runs on every `up` **[V]**) | `sbd config render` |
 | Seed from the Hiro archive | `docker compose down && docker compose run --rm seed` | `sbd seed` |
 | Reset data for this network | `docker compose down && docker compose run --rm reset --yes` | `sbd reset` |
-| Event export / import | `docker compose stop stacks-blockchain stacks-blockchain-api && docker compose run --rm event-export` (or `event-import`), then `docker compose up -d` | `sbd export` / `sbd import` |
+| ~~Event export / import~~ | Dropped 2026-10-28 (Q28): resync with the seed job instead | — |
 | Postgres major upgrade | `docker compose down && docker compose run --rm pg-upgrade` | `sbd db upgrade` |
 | Monitoring | add `monitoring` to `COMPOSE_PROFILES`, `docker compose up -d`; Grafana on `127.0.0.1:${GRAFANA_PORT}` | `sbd start --with monitoring` |
 | Different network | change `NETWORK` in `.env` (single instance per host, as today), or keep one `.env` per network: `docker compose --env-file testnet.env up -d` | `sbd start --network testnet` |

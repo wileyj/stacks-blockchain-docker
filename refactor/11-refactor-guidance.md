@@ -15,7 +15,7 @@ These are the externally visible behaviors that operators, docs or external tool
 
 ### Lifecycle safety
 6. **Ordered shutdown** on mainnet/testnet: node first, with `STACKS_SHUTDOWN_TIMEOUT` (default 1200s), then API, then postgres, then `down`. This guards against corrupt chainstate.
-7. **Replay guard:** refuse start/stop while an API import/export is running.
+7. ~~**Replay guard:** refuse start/stop while an API import/export is running.~~ **Retired 2026-10-28 (Q28):** event replay was dropped.
 8. **Refuse `start` if already running; refuse `reset`/`bns` while running.**
 9. **`reset` asks for confirmation** and deletes only `persistent-data/<network>`.
 10. The signer start requires a non-empty private key and fails before anything is written.
@@ -30,18 +30,18 @@ These are the externally visible behaviors that operators, docs or external tool
 
 ### Layout and naming
 17. Host paths (the defaults to preserve; the rewrite makes per-component locations configurable and mount-safe, Q20 / [#152](https://github.com/stx-labs/stacks-blockchain-docker/issues/152)):
-    - `persistent-data/<net>/{stacks-blockchain,postgres,stacks-signer,event-replay}`
+    - `persistent-data/<net>/{stacks-blockchain,postgres,stacks-signer}` (`event-replay` dropped, Q28)
     - `persistent-data/bns-data`
     - `exported-logs/<svc>.log`
     - `conf/<net>/…`
 18. In-container paths: `/src/stacks-blockchain/Config.toml`, `/root/stacks-blockchain/data`, `/src/stacks-signer/Signer.toml`, `/root/stacks-signer/data/signer.sqlite`, `/var/lib/postgresql/data`, `/tmp/event-replay`, `/bns-data`.
 19. Container names (`stacks-blockchain`, `stacks-blockchain-api`, `postgres`, `stacks-signer`, `nginx`). External monitoring and `docker logs` habits depend on them. If they change, document it as a breaking change.
 20. Docker network name from `DOCKER_NETWORK`.
-21. Profiles: `stacks-blockchain` (normal), `event-replay` (postgres + API only), `bns`.
+21. Profiles: `stacks-blockchain` (normal), `event-replay` (postgres + API only), `bns`. *(Now `node`/`api`/`signer`/`proxy`/`monitoring` plus the `bns` and `seed` jobs; `event-replay` dropped, Q28.)*
 
 ### Helper workflows
 22. Seed: the Hiro archive URL scheme, checksum verification, chainstate extraction, `pg_restore --create`, then rename DB/schema to `PG_DATABASE`/`PG_SCHEMA`, and finally chown to the invoking user.
-23. Event replay: `export-events --file`, `import-events --file --wipe-db --force`, API restart policy `no` during replay.
+23. ~~Event replay: `export-events --file`, `import-events --file --wipe-db --force`, API restart policy `no` during replay.~~ **Retired 2026-10-28 (Q28):** archive snapshots (the seed job) replace event replay.
 24. nginx `/status` → `ok` and the `/` proxy with WebSocket upgrade.
 
 ### Entry points (new, owner requirement 2026-10-19)
@@ -146,6 +146,8 @@ Key mechanical changes that make most of the defects go away:
 6. **Destructive paths** (`reset`, seed, `import --wipe-db`): run with a fixture `persistent-data/` in a temp dir and assert exactly which paths are removed.
 
 ## F. TODOs (owner-requested, deferred)
+
+- **TODO (owner, 2026-10-27): postgres exposure and the network model.** Revisit the optional postgres port (`-f postgres` / `EXPOSE_POSTGRES`, `compose.postgres-port.yaml`): drop it, or move the stack to Docker host networking instead of a project network. Trade-offs are listed in HANDOFF. Decide before the first release.
 
 | # | TODO | Added | Evidence |
 |---|---|---|---|

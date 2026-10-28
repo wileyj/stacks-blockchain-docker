@@ -11,7 +11,7 @@ Usage:
         -n|--network: [ mainnet | testnet ]
         -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]
     optional args:
-        -f|--flags: [ signer,proxy,postgres ]
+        -f|--flags: [ signer,proxy,postgres,monitoring ]
         export: combined with 'logs' action, exports logs to a text file
     ex: ./manage.sh -n mainnet -a start -f proxy
 	ex: ./manage.sh -n mainnet -a start -f signer,proxy
@@ -49,6 +49,14 @@ Usage:
 ./manage.sh -n <network> -a restart -f proxy
 ```
 
+#### With monitoring
+
+Prometheus and Grafana on 127.0.0.1; set `GRAFANA_ADMIN_PASSWORD` in `.env` first. See [Monitoring](./monitoring.md).
+
+```bash
+./manage.sh -n <network> -a start -f monitoring
+```
+
 ---
 
 ### Stopping Services
@@ -64,30 +72,10 @@ repo (the `compose-files/` layout) is stopped the same way by `./manage.sh -a st
 
 ---
 
-### Event Replay
+### Event Replay (removed)
 
-#### Export stacks-blockchain-api events
-
-```bash
-./manage.sh -n <network> -a export
-./manage.sh -n <network> -a logs # check logs for completion
-./manage.sh -n <network> -a restart
-# or, with the services stopped:
-#   EVENT_REPLAY_ACTION=export docker compose --profile event-replay up -d
-#   docker compose logs -f event-replay
-```
-
-#### Replay stacks-blockchain-api events
-
-The events file must exist in this network's event-replay dir (default `./persistent-data/<network>/event-replay/`).
-The import wipes the API database first.
-
-```bash
-./manage.sh -n <network> -a import
-./manage.sh -n <network> -a logs # check logs for completion
-./manage.sh -n <network> -a restart
-# or, with the services stopped: EVENT_REPLAY_ACTION=import docker compose --profile event-replay up -d
-```
+API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead
+(see "Seed from the Hiro archive" below).
 
 ---
 
@@ -124,6 +112,19 @@ with **sudo** privileges.
 
 ```bash
 sudo ./manage.sh -n <network> -a reset
+```
+
+### Seed from the Hiro archive
+
+Restores the chainstate and the API database from a snapshot instead of syncing from genesis. See the
+README for details; the stack must be stopped.
+
+```bash
+docker compose --profile '*' down
+docker compose run --rm seed --dry-run
+docker compose run --rm seed
+# with archives you already have, placed in SEED_DOWNLOAD_DIR:
+docker compose run --rm seed --chainstate <file>.tar.zst --pgdump <file>.dump
 ```
 
 ### Download BNS data

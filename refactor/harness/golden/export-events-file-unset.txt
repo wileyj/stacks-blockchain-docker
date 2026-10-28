@@ -1,9 +1,0 @@
-=== scenario: export-events-file-unset
---- args: ./manage.sh -n mainnet -a export
---- .env overrides: STACKS_EXPORT_EVENTS_FILE=
---- exit code: 0
---- output (first 30 lines):
-
-[ Error ]        Undefined or commented STACKS_EXPORT_EVENTS_FILE variable in <REPO>/.env
---- docker calls:
---- filesystem side effects:

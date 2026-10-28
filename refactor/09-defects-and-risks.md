@@ -21,7 +21,7 @@ The verification tags ([V]/[S]/[U]) are defined in the [README](./README.md). Th
 | D06 | High | security | Secrets broadcast to every container / mounted into the node |
 | D07 | Medium | security | Weak default credentials, all ports bound to 0.0.0.0 |
 | D08 | Medium | mocknet | A failed `up` leaves `.env` modified (`set -e` skips the revert) |
-| D09 | High | event-replay | Hard-coded mainnet TSV path; a missing file is not fatal before `--wipe-db --force` |
+| D09 | High | event-replay | Hard-coded mainnet TSV path; a missing file is not fatal before `--wipe-db --force` | **Closed 2026-10-28: event replay removed (Q28).**
 | D10 | Medium | bns | `bns` always exits 1, never reports completion, leaves its container |
 | D11 | Low | bns | `setup-bns.sh` overwrites `USER_ID`, so the data is chowned to root |
 | D12 | Low | bns | `check_bns` is a no-op (`BNS_FILES` undefined) |
@@ -49,8 +49,8 @@ The verification tags ([V]/[S]/[U]) are defined in the [README](./README.md). Th
 | D34 | Low | config | Testnet RPC vars ineffective |
 | D35 | Medium | config | Unescaped values in `sed` replacements |
 | D36 | Info | mocknet | mocknet chain/DB are ephemeral; signer DB is not |
-| D37 | Low | event-replay | mocknet mounts mainnet's replay dir; docs say N/A but it's allowed |
-| D38 | Medium | event-replay | Replay detection depends on API log strings |
+| D37 | Low | event-replay | mocknet mounts mainnet's replay dir; docs say N/A but it's allowed | **Closed 2026-10-28: event replay removed (Q28).**
+| D38 | Medium | event-replay | Replay detection depends on API log strings | **Closed 2026-10-28: event replay removed (Q28).**
 | D39 | Low | UX | arm64 prompt wording/coverage |
 | D40 | Medium | process | No CI, tests, or shell linting |
 | D41 | Low | config | `.env` parsed by both bash and the Compose dotenv parser |

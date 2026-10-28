@@ -26,6 +26,13 @@ jobs:
         run: shellcheck -x -S error manage.sh scripts/*.sh tools/*.sh .github/ci/*.sh
       - name: docker compose config (every network x profile x flag)
         run: .github/ci/compose-config.sh
+      - name: build the seed job image (runs its unit tests)
+        run: docker build -q -f tools/seed/Dockerfile -t seed-ci .
+      - name: monitoring rules (promtool check + unit tests) and dashboards (valid JSON)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.15.0 check rules conf/monitoring/rules/stacks.yml
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.15.0 test rules tools/monitoring/stacks.test.yml
+          for f in conf/monitoring/grafana/dashboards/*.json; do python3 -m json.tool "$f" >/dev/null || { echo "invalid JSON: $f"; exit 1; }; done
 
   harness:
     name: manage.sh characterization harness

@@ -26,7 +26,7 @@ COLCYAN=$'\033[36m' # Cyan
 # COLWHITE=$'\033[37m' # White
 
 # # Bright colors
-COLBRRED=$'\033[91m' # Bright Red
+# COLBRRED=$'\033[91m' # Bright Red
 # COLBRGREEN=$'\033[92m' # Bright Green
 # COLBRYELLOW=$'\033[93m' # Bright Yellow
 # COLBRBLUE=$'\033[94m' # Bright Blue
@@ -109,7 +109,7 @@ COMPOSE_FILE_MAIN="${SCRIPTPATH}/compose.yaml"
 COMPOSE_FILE_PG_PORT="${SCRIPTPATH}/compose.postgres-port.yaml"
 # Containers of a stack started from the old compose-files/ layout (a different compose project)
 LEGACY_PROJECT="compose-files"
-SUPPORTED_FLAGS=(signer proxy postgres bns)
+SUPPORTED_FLAGS=(signer proxy postgres bns monitoring)
 ${VERBOSE} && log "SUPPORTED_FLAGS: ${SUPPORTED_FLAGS[*]}"
 SUPPORTED_NETWORKS=(mainnet testnet)
 ${VERBOSE} && log "SUPPORTED_NETWORKS: ${SUPPORTED_NETWORKS[*]}"
@@ -145,9 +145,9 @@ usage() {
 	log "Usage:"
 	log "    ${0} -n <network> -a <action> <optional args>"
 	log "        -n|--network: [ mainnet | testnet ]"
-	log "        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]"
+	log "        -a|--action: [ start | stop | logs | reset | upgrade | bns ]"
 	log "    optional args:"
-	log "        -f|--flags: [ signer,proxy,postgres ]"
+	log "        -f|--flags: [ signer,proxy,postgres,monitoring ]"
 	log "        export: combined with 'logs' action, exports logs to a text file"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f proxy${COLRESET}"
 	log "    ex: ${COLCYAN}${0} -n mainnet -a start -f signer,proxy${COLRESET}"
@@ -240,75 +240,6 @@ check_network() {
 	return 1
 }
 
-# Check if there is an event-replay operation in progress
-check_event_replay(){
-	${VERBOSE} && log "Checking status of API event-replay"
-	##
-	## Check if import has started and save return code
-	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
-		log "${ACTION} Checking for an active event-replay import"
-	fi
-	eval "docker logs event-replay 2>&1 | head -n20 | grep -q 'Importing raw event requests'" || test ${?} -eq 141
-	check_import_started="${?}"
-	${VERBOSE} && log "check_import_started: ${check_import_started}"
-	##
-	## Check if import has completed and save return code
-	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
-		log "${ACTION} Checking for a completed event-replay import"
-	fi
-	eval "docker logs event-replay --tail 20 2>&1 | grep -q 'Event import and playback successful'" || test ${?} -eq 141
-	check_import_finished="${?}"
-	${VERBOSE} && log "check_import_finished: ${check_import_finished}"
-	##
-	## Check if export has started and save return code
-	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
-		log "${ACTION} Checking for an active event-replay export"
-	fi
-	eval "docker logs event-replay 2>&1 | head -n20 | grep -q 'Export started'" || test ${?} -eq 141
-	check_export_started="${?}"
-	${VERBOSE} && log "check_export_started: ${check_export_started}"
-	##
-	## Check if export has completed and save return code
-	if [[ "${ACTION}" == "export" || "${ACTION}" == "import" ]]; then
-		log "${ACTION} Checking for a completed event-replay export"
-	fi
-	eval "docker logs event-replay --tail 20 2>&1 | grep -q 'Export successful'" || test ${?} -eq 141
-	check_export_finished="${?}"
-	${VERBOSE} && log "check_export_finished: ${check_export_finished}"
-
-	if [ "${check_import_started}" -eq "0" ]; then
-		# Import has started
-		${VERBOSE} && log "import has started"
-		if [ "${check_import_finished}" -eq "0" ]; then
-			# Import has finished
-			log "Event import and playback has finished"
-			${VERBOSE} && log "import has finished, return 0"
-			return 0
-		fi
-		# Import hasn't finished, return 1
-		log_warn "Event import and playback is in progress"
-		${VERBOSE} && log "import has not finished, return 1"
-		return 1
-	fi
-	if [ "${check_export_started}" -eq "0" ]; then
-		# Export has started
-		${VERBOSE} && log "export has started"
-		if [ "${check_export_finished}" -eq "0" ]; then
-			# Export has finished
-			log "Event export has finished"
-			${VERBOSE} && log "export has finished, return 0"
-			return 0
-		fi
-		# Export hasn't finished, return 1
-		log_warn "Event export is in progress"
-		${VERBOSE} && log "export has not finished, return 1"
-		return 1
-	fi
-	${VERBOSE} && log "No event-replay in progress"
-	# Default return success - event-replay is not running
-	return 0
-}
-
 # Determine if a supplied container name is running
 check_container() {
 	local container="${1}"
@@ -345,8 +276,8 @@ check_bns() {
 }
 
 # Build the compose arguments for a manage.sh profile and flags (sets COMPOSE_ARGS)
-#     - stacks-blockchain: profiles node + api, plus signer/proxy from the flags
-#     - event-replay / bns: the job's own profile
+#     - stacks-blockchain: profiles node + api, plus signer/proxy/monitoring from the flags
+#     - bns: the job's own profile
 #     - all: every profile, used to stop, follow logs and pull
 #     - the postgres flag (or EXPOSE_POSTGRES=true) adds the port override file
 compose_args() {
@@ -358,7 +289,7 @@ compose_args() {
 			profiles=(node api)
 			for flag in ${flags}; do
 				case ${flag} in
-					signer|proxy) profiles+=("${flag}") ;;
+					signer|proxy|monitoring) profiles+=("${flag}") ;;
 				esac
 			done
 			;;
@@ -382,7 +313,6 @@ data_dirs() {
 		"${STACKS_DATA_DIR:-${DATA_ROOT}/${NETWORK}/stacks-blockchain}"
 		"${POSTGRES_DATA_DIR:-${DATA_ROOT}/${NETWORK}/postgres}"
 		"${SIGNER_DATA_DIR:-${DATA_ROOT}/${NETWORK}/stacks-signer}"
-		"${EVENT_REPLAY_DIR:-${DATA_ROOT}/${NETWORK}/event-replay}"
 	)
 }
 
@@ -409,9 +339,6 @@ docker_up() {
 	if check_network "${PROFILE}"; then
 		echo
 		log_exit "Stacks Blockchain services are already running"
-	fi
-	if ! check_event_replay; then
-		log_exit "Event-replay in progress. Refusing to start services"
 	fi
 
 	# Set signer env based on flag
@@ -460,10 +387,6 @@ docker_down() {
 			status
 		fi
 		return
-	fi
-	# sanity checks before stopping services
-	if ! check_event_replay;then
-		log_exit "Event-replay in progress. Refusing to stop services"
 	fi
 	# A stack started from the old compose-files/ layout is stopped container by container
 	${VERBOSE} && log "calling legacy_stop function"
@@ -605,59 +528,6 @@ download_bns_data() {
 	fi
 	echo
 	log_error "Undefined or commented ${COLYELLOW}BNS_IMPORT_DIR${COLRESET} variable in ${COLCYAN}${ENV_FILE}${COLRESET}"
-	exit 0
-}
-
-# Perform the Hiro API event-replay
-event_replay(){
-	if [ "${STACKS_BLOCKCHAIN_API_VERSION}" == "5.0.1" ]; then
-	 	echo
-		log "${COLYELLOW}${COLBOLD}There is an open issue running event-replay with this version (${STACKS_BLOCKCHAIN_API_VERSION}) of the API${COLRESET}"
-		log "    https://github.com/hirosystems/stacks-blockchain-api/issues/1336"
-		log "For now, use prior version of the API: ${COLBOLD}4.2.1${COLRESET}"
-		log "Or sync from genesis using API: ${COLBOLD}5.0.1${COLRESET}"
-		echo
-		log_exit "${1} not supported for this version of the API"
-	fi
-	if [ "${STACKS_EXPORT_EVENTS_FILE}" != "" ]; then
-		${VERBOSE} && log "Using defined STACKS_EXPORT_EVENTS_FILE: ${STACKS_EXPORT_EVENTS_FILE}"
-		local action="${1}"
-		# The events file lives in this network's event-replay dir (D09: it was always mainnet's)
-		data_dirs
-		local tsv_file
-		tsv_file="${DATA_DIRS[3]}"/$(basename "${STACKS_EXPORT_EVENTS_FILE}")
-		# An import needs the file; an export creates it
-		if [[ "${action}" == "import" && ! -f "${tsv_file}" ]]; then
-			log_exit "Missing event-replay file: ${COLCYAN}${tsv_file}${COLRESET}"
-		fi
-		${VERBOSE} && log "Using local event-replay file: ${tsv_file}"
-		if check_network "${PROFILE}"; then
-			${VERBOSE} && log "calling docker_down function"
-			docker_down
-		fi
-		PROFILE="event-replay"
-		FLAGS_ARRAY=()
-		# Read by the event-replay service in compose.yaml
-		export EVENT_REPLAY_ACTION="${action}"
-		${VERBOSE} && log "PROFILE: ${PROFILE}"
-		${VERBOSE} && log "EVENT_REPLAY_ACTION: ${EVENT_REPLAY_ACTION}"
-		${VERBOSE} && log "calling docker_up function"
-		docker_up
-		echo
-		log "${COLBRRED}${COLBOLD}This operation can take a long while${COLRESET}"
-		log "Check logs for completion: ${COLCYAN}${0} -n ${NETWORK} -a logs${COLRESET}"
-		if [ "${action}" == "export" ]; then
-			log "    - Look for a export log entry: ${COLYELLOW}\"Export successful.\"${COLRESET}"
-		fi
-		if [ "${action}" == "import" ]; then
-			log "    - Look for a import log entry: ${COLYELLOW}\"Event import and playback successful.\"${COLRESET}"
-		fi
-		log "${COLBOLD}Once the operation is complete${COLRESET}, restart the service with: ${COLCYAN}${0} -n ${NETWORK} -a restart${COLRESET}"
-		echo
-		exit 0
-	fi
-	echo
-	log_error "Undefined or commented ${COLYELLOW}STACKS_EXPORT_EVENTS_FILE${COLRESET} variable in ${COLCYAN}${ENV_FILE}${COLRESET}"
 	exit 0
 }
 
@@ -887,8 +757,8 @@ case ${ACTION} in
 		docker_logs "${LOG_OPTS}"
 		;;
 	import|export)
-		${VERBOSE} && log "calling event_replay function"
-		event_replay "${ACTION}"
+		# API event replay was removed: archives make it obsolete for resyncing
+		log_exit "Event replay (import/export) was removed. To resync, seed from the Hiro archive: docker compose run --rm seed"
 		;;
 	upgrade|pull)
 		${VERBOSE} && log "calling docker_pull function"

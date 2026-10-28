@@ -6,23 +6,17 @@
 Creating data dir <REPO>/persistent-data/testnet/stacks-blockchain 
 Creating data dir <REPO>/persistent-data/testnet/postgres 
 Creating data dir <REPO>/persistent-data/testnet/stacks-signer 
-Creating data dir <REPO>/persistent-data/testnet/event-replay 
 Starting all services for stacks-blockchain 
 [ Success ]      Brought up testnet
     Follow logs: ./manage.sh -n testnet -a logs 
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files
-  docker logs event-replay
-  docker logs event-replay --tail 20
-  docker logs event-replay
-  docker logs event-replay --tail 20
   docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile node --profile api --profile signer up -d
 --- filesystem side effects:
   + ./.env.save
   + ./persistent-data
   + ./persistent-data/testnet
-  + ./persistent-data/testnet/event-replay
   + ./persistent-data/testnet/postgres
   + ./persistent-data/testnet/stacks-blockchain
   + ./persistent-data/testnet/stacks-signer

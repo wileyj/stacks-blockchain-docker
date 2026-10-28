@@ -10,9 +10,5 @@ Starting all services for stacks-blockchain
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files
-  docker logs event-replay
-  docker logs event-replay --tail 20
-  docker logs event-replay
-  docker logs event-replay --tail 20
   docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile node --profile api up -d
 --- filesystem side effects:

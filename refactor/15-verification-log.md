@@ -358,6 +358,41 @@ Findings:
 | Consistency test (committed sample == generated from committed upstream + deployment) | Passes; it runs inside the config image build, so a hand-edited sample fails CI |
 | Compose-only boot, testnet `node,api` | PASS |
 
+### Phase 2M monitoring profile — Linux x64, 2026-10-27 [V]
+
+`compose-boot.sh mainnet node,api,signer,monitoring 420` with the LAN BTC peer. Images: Prometheus v3.15.0, Grafana 13.0.2, cAdvisor v0.55.1, node-exporter v1.12.1, postgres-exporter v0.20.1.
+
+| Check | Result |
+|---|---|
+| Health after 420 s | All 9 services running, 0 restarts; postgres, API, node, signer, Prometheus, Grafana and cAdvisor **healthy**; no panics |
+| Scrape targets (rendered from `COMPOSE_PROFILES` by the config job) | 7/7 **up**: stacks-node, stacks-api, stacks-signer, postgres, cadvisor, node-exporter, prometheus |
+| Rules | 13 rules healthy, 0 evaluation errors; `promtool check rules` passes, and the unit tests (tip-stall with and without peers, API lag value and alert, the 15 m down-target grace) pass |
+| Dashboards | All 3 provisioned in folder *Stacks*. **Every panel query returns data** (CPU/memory/net by service: 9 series), except "Firing alerts" (none firing). One query was wrong in the first run ("Load per CPU", vector label mismatch) and is fixed with `scalar()` |
+| Grafana | Datasource health "Successfully queried the Prometheus API"; anonymous access → 401. Without `GRAFANA_ADMIN_PASSWORD` it exits with the message, 3 tries (`on-failure:3`) |
+| Secrets (doc 12 acceptance 5) | `compose-config.sh` asserts no `.env` secret in the monitoring containers' environment (postgres-exporter DB credentials and Grafana's own password allowed) |
+| Idle overhead | Prometheus 72 MiB, cAdvisor 27 MiB, postgres-exporter 20 MiB, node-exporter 17 MiB: **≈137 MiB without Grafana** (target < 400 MB), Grafana 160 MiB, all < 1% CPU. 5 640 head series (everything is collected for now; M7 defers trimming) |
+
+Findings:
+- **cAdvisor v0.52.1 sees no containers on Docker 29 with the containerd image store** (`storage=overlayfs`). Its Docker factory registers, but `DockerVersion` stays empty and it exports only the root cgroup (`id="/"`). **v0.55.1 works**: per-container series with the compose project/service labels, 19.7 MiB. **Correction to P5:** its cAdvisor result on this host counted metric *families*, which all exist for the root cgroup alone; it never showed per-container series.
+- `StacksSignerBehindNode` went pending during the genesis sync. The signer's `stacks_signer_stacks_node_height` moves in batches (99 → 333 → 554) while the node climbs steadily, so the lag swings between about 130 and negative values. Its `for:` is now 15 m.
+- Compose `${VAR:?}` fails the **whole** project even when the service's profile is inactive, so the Grafana password check lives in Grafana's entrypoint. `deploy.replicas: 0|1` works as an on/off switch, but only for numbers (`false` is rejected).
+
+### Phase 3a containerized seed job — testnet, Linux x64, 2026-10-28 [V]
+
+`docker compose run --rm -T seed …` in project `sbd-seed` (repo copy on `/stacks/temp`), `NETWORK=testnet`, default pins (core 4.0.4, API 9.7.0, pg17). Image: `tools/seed` on `postgres:17-alpine`.
+
+| Step | Result |
+|---|---|
+| Guard: stack running | Refused, exit 1: "refusing to seed while stacks-blockchain, stacks-blockchain-api, postgres are running" (service names resolve on the compose network) |
+| `--dry-run` | Selected `20261027` (core 4.0.1, API 9.0.2, pg17), with the "older than the pins" warning; plan with sizes (6.4 + 2.7 GiB) and free space; nothing changed |
+| No TTY, no `--yes` | Refused, exit 2 |
+| Seed (`--yes --keep-downloads`) | **5 min 22 s** end to end. Both files downloaded in parallel and hashed while writing (`sha256 OK`); chainstate extraction and `pg_restore -j 8` ran in parallel into staging dirs; **0 pg_restore errors**; then the swap |
+| Boot of the seeded data | API ready in about 50 s; node and API at tip **848 652** (the snapshot, not genesis) |
+| Remote mode with the files already present | Verified and reused with no download (2 min 7 s); now also writes `<name>.sha256` next to each archive |
+| Local mode (`--chainstate/--pgdump`) over existing data | 1 min 53 s; `sha256 OK` from the sidecar checksums (the first run, before sidecars existed, warned "not verified"); booted at the same tip |
+
+Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing dates and never crossing networks), download (hash while writing, resume after a dropped connection, resume a partial file from an earlier run, no refetch of a complete file, a 404 fails without retries), extraction (staging, swap keeps the dir itself, symlinks, ownership, 5 path-escape refusals), local-pair rules, rename SQL, exit codes.
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |

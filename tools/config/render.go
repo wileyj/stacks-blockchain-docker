@@ -31,6 +31,8 @@ type Settings struct {
 	CoreRPCHost          string
 	CoreRPCPort          string
 	SignerKey            string
+	// ContainerMetrics: cAdvisor runs with the monitoring profile (MONITORING_CONTAINER_METRICS=1)
+	ContainerMetrics bool
 }
 
 // SettingsFromEnv reads and validates the settings. Empty values keep the template's value.
@@ -49,7 +51,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		}
 	}
 	if s.Profiles["*"] {
-		for _, p := range []string{"node", "api", "signer", "proxy"} {
+		for _, p := range []string{"node", "api", "signer", "proxy", "monitoring"} {
 			s.Profiles[p] = true
 		}
 	}
@@ -74,6 +76,13 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	s.APIEventEndpoint = orDefault(getenv("API_EVENT_ENDPOINT"),
 		"stacks-blockchain-api:"+orDefault(getenv("STACKS_CORE_EVENT_PORT"), "3700"))
 	s.APIObserverTimeoutMS = orDefault(getenv("API_OBSERVER_TIMEOUT_MS"), "60000")
+	switch v := orDefault(getenv("MONITORING_CONTAINER_METRICS"), "1"); v {
+	case "1":
+		s.ContainerMetrics = true
+	case "0":
+	default:
+		return s, fmt.Errorf("MONITORING_CONTAINER_METRICS must be 0 or 1, got %q", v)
+	}
 
 	for name, v := range map[string]string{
 		btc + "RPC_PORT": s.BTCRPCPort, btc + "P2P_PORT": s.BTCP2PPort, "NODE_METRICS_PORT": s.NodeMetricsPort,

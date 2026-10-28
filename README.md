@@ -71,16 +71,24 @@ aria2c --version
 ```
 
 ```bash
-./scripts/seed-chainstate.sh --dry-run   # optional: show the snapshot it will use
-sudo ./scripts/seed-chainstate.sh
-./manage.sh -n mainnet -a start
+docker compose --profile '*' down                 # the seed refuses to run while the stack is up
+docker compose run --rm seed --dry-run            # optional: show the snapshot it will use
+docker compose run --rm seed                      # asks before replacing data; --yes to skip
+docker compose up -d                              # or: ./manage.sh -n mainnet -a start
 ```
+
+The seed runs in a container (no sudo, curl or zstd needed on the host): it downloads the chainstate
+and API dump of the same date in parallel, verifies them while downloading, resumes interrupted
+downloads, and only replaces the existing data once both are restored. Archives you already have go
+in `SEED_DOWNLOAD_DIR` (default `./persistent-data/seed-downloads`): `docker compose run --rm seed
+--chainstate <file> --pgdump <file>`. The older `sudo ./scripts/seed-chainstate.sh` still works.
 
 - [Requirements](./docs/requirements.md)
 - [Docker Setup](./docs/docker.md)
 - [Configuration](./docs/config.md)
 - [Upgrading](./docs/upgrade.md)
 - [Usage](./docs/usage.md)
+- [Monitoring](./docs/monitoring.md)
 - [Common Issues](./docs/issues.md)
 
 ---

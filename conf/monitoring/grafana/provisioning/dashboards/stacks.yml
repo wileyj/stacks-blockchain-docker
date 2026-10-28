@@ -1,0 +1,10 @@
+## Dashboards shipped in conf/monitoring/grafana/dashboards (read-only in Grafana; copy one to customize)
+apiVersion: 1
+providers:
+  - name: stacks
+    folder: Stacks
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

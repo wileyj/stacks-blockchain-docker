@@ -15,21 +15,12 @@ Sample error from postgres/API logs:
 pq: could not resize shared memory segment "/PostgreSQL.2058389254" to 12615680 bytes: No space left on device
 ```
 
-## Changes to BNS import using stacks-blockchain-api version >= 5.0.0
+## BNS v1 data
 
-Some changes introduced in this version of the API breaks the way BNS has been imported in the past. \
-In this version, the BNS import has been moved to the event-replay. Notably, this makes it impossible to _first_ import BNS data before syncing. \
-The only way I've found to import BNS data using this version is to start the sync, stop it, then run the event-replay import with `BNS_IMPORT_DIR` uncommented, then restart the services. \
-<https://github.com/hirosystems/stacks-blockchain-api/issues/1327>
-
-```bash
-$ ./manage.sh -n <network> -a start
-# let this run until some blocks have been downloaded
-$ ./manage.sh -n <network> -a stop
-$ ./manage.sh -n <network> -a import
-# this will take a while since it should now import BNS data
-$ ./manage.sh -n <network> -a restart
-```
+The API (9.x) imports the legacy BNS v1 data by itself during a sync **from genesis**, when
+`BNS_IMPORT_DIR` is uncommented in `.env` and the files are present: download them first with
+`./manage.sh bns` (or `docker compose --profile bns up`). A node seeded from a Hiro archive snapshot
+already contains the BNS data, so this only matters for genesis syncs.
 
 ## Port(s) already in use
 
@@ -54,15 +45,13 @@ $ sudo systemctl restart docker
 If the Stacks blockchain is no longer syncing blocks, and the API reports an error similar to this:\
 `Error processing core node block message DB does not contain a parent block at height 1970 with index_hash 0x3367f1abe0ee35b10e77fbcaa00d3ca452355478068a0662ec492bb30ee0f13e"`,\
 The API (and by extension the DB) is out of sync with the blockchain. \
-The only known method to recover is to resync from genesis (**event-replay _may_ work, but in all likelihood will restore data to the same broken state**).
-
-### Attempt the event-replay
+To recover, re-seed both the chainstate and the API database from the same Hiro archive snapshot
+(or resync from genesis):
 
 ```bash
-$ ./manage.sh -n <network> -a stop
-$ ./manage.sh -n <network> -a import
-$ ./manage.sh -n <network> -a logs # check logs for completion
-$ ./manage.sh -n <network> -a restart
+docker compose --profile '*' down
+docker compose run --rm seed
+docker compose up -d
 ```
 
 ## Missing bit_xor
@@ -96,6 +85,9 @@ _Mainnet needs about 400GB free for the downloads (set `SEED_DOWNLOAD_DIR` to us
 The script picks the newest snapshot pair (chainstate + API dump from the same date) that matches the versions in `.env`, shows the plan and asks before deleting existing data. Nothing is deleted until both files are downloaded and verified.
 
 ```bash
-./scripts/seed-chainstate.sh --dry-run   # show the selected snapshot and plan, change nothing
-sudo ./scripts/seed-chainstate.sh        # add --yes to skip the confirmation (required when not run from a terminal)
+docker compose --profile '*' down
+docker compose run --rm seed --dry-run   # show the selected snapshot and plan, change nothing
+docker compose run --rm seed             # add --yes (or CONFIRM=yes) to skip the confirmation
 ```
+
+The older `sudo ./scripts/seed-chainstate.sh [--dry-run] [--yes]` still works the same way.
