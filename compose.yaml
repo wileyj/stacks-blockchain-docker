@@ -261,6 +261,36 @@ services:
       postgres:
         condition: service_healthy
 
+  ## Seed the node + API from a Hiro archive snapshot (refactor/14 §9), with the stack stopped:
+  ##   docker compose --profile '*' down && docker compose run --rm seed [--dry-run] [--yes]
+  ## Local archives: put them in SEED_DOWNLOAD_DIR and add --chainstate <file> --pgdump <file>.
+  ## Refuses while the stack runs; the old data is only replaced once both parts are ready.
+  seed:
+    build:
+      context: .
+      dockerfile: tools/seed/Dockerfile
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-17}
+    image: stacks-blockchain-docker-seed:pg${POSTGRES_VERSION:-17}
+    pull_policy: build
+    restart: "no"
+    profiles: [seed]
+    environment:
+      - NETWORK
+      - STACKS_BLOCKCHAIN_VERSION
+      - STACKS_BLOCKCHAIN_API_VERSION
+      - POSTGRES_VERSION
+      - PG_USER
+      - PG_PASSWORD
+      - PG_DATABASE
+      - PG_SCHEMA
+      - CONFIRM
+      - SEED_RESTORE_JOBS
+    volumes:
+      - ${STACKS_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-blockchain}:/data/stacks-blockchain
+      - ${POSTGRES_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/postgres}:/data/postgres
+      - ${SEED_DOWNLOAD_DIR:-${DATA_ROOT:-./persistent-data}/seed-downloads}:/downloads
+
   ## Legacy BNS v1 data for a genesis sync with BNS_IMPORT_DIR set: docker compose --profile bns up
   bns:
     image: bash

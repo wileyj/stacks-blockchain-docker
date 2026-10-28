@@ -96,6 +96,9 @@ _Mainnet needs about 400GB free for the downloads (set `SEED_DOWNLOAD_DIR` to us
 The script picks the newest snapshot pair (chainstate + API dump from the same date) that matches the versions in `.env`, shows the plan and asks before deleting existing data. Nothing is deleted until both files are downloaded and verified.
 
 ```bash
-./scripts/seed-chainstate.sh --dry-run   # show the selected snapshot and plan, change nothing
-sudo ./scripts/seed-chainstate.sh        # add --yes to skip the confirmation (required when not run from a terminal)
+docker compose --profile '*' down
+docker compose run --rm seed --dry-run   # show the selected snapshot and plan, change nothing
+docker compose run --rm seed             # add --yes (or CONFIRM=yes) to skip the confirmation
 ```
+
+The older `sudo ./scripts/seed-chainstate.sh [--dry-run] [--yes]` still works the same way.

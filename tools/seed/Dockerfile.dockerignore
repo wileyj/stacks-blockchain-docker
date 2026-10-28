@@ -1,0 +1,3 @@
+# Only the seed sources: never persistent-data/ or downloaded archives
+*
+!tools/seed/

@@ -134,6 +134,19 @@ with **sudo** privileges.
 sudo ./manage.sh -n <network> -a reset
 ```
 
+### Seed from the Hiro archive
+
+Restores the chainstate and the API database from a snapshot instead of syncing from genesis. See the
+README for details; the stack must be stopped.
+
+```bash
+docker compose --profile '*' down
+docker compose run --rm seed --dry-run
+docker compose run --rm seed
+# with archives you already have, placed in SEED_DOWNLOAD_DIR:
+docker compose run --rm seed --chainstate <file>.tar.zst --pgdump <file>.dump
+```
+
 ### Download BNS data
 
 Store legacy BNS data to `./persistent-data/bns-data` \

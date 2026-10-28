@@ -240,6 +240,9 @@ Where the time actually goes, and what can be done:
 
 ### 9.3 Seed as a containerized job
 
+> **Implemented 2026-10-28 (phase 3a):** `tools/seed`, compose service `seed`. Status and the remaining items: [HANDOFF](./HANDOFF.md) "Phase 3a"; verification: [15](./15-verification-log.md) "Phase 3a".
+
+
 **Load-local-archive mode (Q16):** `docker compose run --rm -v /path/to/archive.tar.xz:/in/archive:ro seed --from /in/archive [--sha256 <hex>]`, or `sbd seed --from <file>`. It streams a local tar.xz/zst/gz (several hundred GB) into staging on the target filesystem, optionally verifies a digest, and swaps it in. The same guards apply. There is no copy of the archive, but staging needs room for the extracted data.
 
 `docker compose run --rm seed [--yes] [--jobs N]` (or `sbd seed --network mainnet …`, which runs exactly that) starts a `seed` container (curl/HTTP client, zstd, tar, postgres client tools matching `POSTGRES_VERSION`) that:

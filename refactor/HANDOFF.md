@@ -169,6 +169,24 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - an event-age alert (the units of `stacks_last_event_timestamps` aren't verified);
 - trimming the collected series (M7, below).
 
+## Phase 3a: containerized seed job, done (2026-10-28)
+
+`tools/seed` (Go) in an image built from `postgres:${POSTGRES_VERSION}-alpine`; compose service `seed` (profile `seed`): `docker compose run --rm seed [--dry-run] [--yes] [--keep-downloads] [--chainstate F --pgdump F]`.
+- **Guard:** refuses while node, API, postgres or signer is up; their service names resolve on the network only while they run. Exit 1.
+- **Confirmation:** a TTY prompt, or `--yes`/`CONFIRM=yes`; without either it exits 2.
+- **Selection:** Q24 pair rule, the same as the shell script.
+- **Downloads:** both in parallel, single stream each, hashed while written, resumable (a partial file is re-hashed, then a Range request continues it). Retries with backoff; 404/403 fail fast. A `.sha256` sidecar is written next to each verified archive.
+- **Local mode:** the names are parsed and the same Q24 rules applied, then verified against the sidecar if present.
+- **Build:** chainstate extraction (streamed zstd + tar, path-escape checks, ownership from the data dir) and `pg_restore -j` (own temporary server: initdb with the `.env` user/password, bulk-load settings, renames) run in parallel, each into `<dir>/.seed-staging`. Only after both succeed are they swapped in. The dirs themselves are kept (D48); a failure leaves the old data.
+- **Cleanup:** downloads this run created are deleted unless `--keep-downloads`; your own files never are.
+- Fixes D01, D17–D19, D43, D48, D49 (no second read), D52, D53 for the compose path. `scripts/seed-chainstate.sh` stays as the fallback.
+
+**Not done (Q21 remainder):**
+- multi-connection segmented downloads (aria2-style; hashing while downloading needs a single stream, so it would mean a re-read);
+- a streaming download-to-extract mode without storing the archive;
+- `.tar.xz`/`.tar.gz` local archives;
+- a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
+
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 
 The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.

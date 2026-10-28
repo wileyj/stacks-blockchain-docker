@@ -377,6 +377,22 @@ Findings:
 - `StacksSignerBehindNode` went pending during the genesis sync. The signer's `stacks_signer_stacks_node_height` moves in batches (99 → 333 → 554) while the node climbs steadily, so the lag swings between about 130 and negative values. Its `for:` is now 15 m.
 - Compose `${VAR:?}` fails the **whole** project even when the service's profile is inactive, so the Grafana password check lives in Grafana's entrypoint. `deploy.replicas: 0|1` works as an on/off switch, but only for numbers (`false` is rejected).
 
+### Phase 3a containerized seed job — testnet, Linux x64, 2026-10-28 [V]
+
+`docker compose run --rm -T seed …` in project `sbd-seed` (repo copy on `/stacks/temp`), `NETWORK=testnet`, default pins (core 4.0.4, API 9.7.0, pg17). Image: `tools/seed` on `postgres:17-alpine`.
+
+| Step | Result |
+|---|---|
+| Guard: stack running | Refused, exit 1: "refusing to seed while stacks-blockchain, stacks-blockchain-api, postgres are running" (service names resolve on the compose network) |
+| `--dry-run` | Selected `20261027` (core 4.0.1, API 9.0.2, pg17), with the "older than the pins" warning; plan with sizes (6.4 + 2.7 GiB) and free space; nothing changed |
+| No TTY, no `--yes` | Refused, exit 2 |
+| Seed (`--yes --keep-downloads`) | **5 min 22 s** end to end. Both files downloaded in parallel and hashed while writing (`sha256 OK`); chainstate extraction and `pg_restore -j 8` ran in parallel into staging dirs; **0 pg_restore errors**; then the swap |
+| Boot of the seeded data | API ready in about 50 s; node and API at tip **848 652** (the snapshot, not genesis) |
+| Remote mode with the files already present | Verified and reused with no download (2 min 7 s); now also writes `<name>.sha256` next to each archive |
+| Local mode (`--chainstate/--pgdump`) over existing data | 1 min 53 s; `sha256 OK` from the sidecar checksums (the first run, before sidecars existed, warned "not verified"); booted at the same tip |
+
+Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing dates and never crossing networks), download (hash while writing, resume after a dropped connection, resume a partial file from an earlier run, no refetch of a complete file, a 404 fails without retries), extraction (staging, swap keeps the dir itself, symlinks, ownership, 5 path-escape refusals), local-pair rules, rename SQL, exit codes.
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |
