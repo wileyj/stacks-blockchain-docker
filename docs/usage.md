@@ -106,12 +106,13 @@ _Note that each time you run this command the log files will be overwritten._
 
 ### Delete all chainstate data
 
-Empties this network's data dirs (the dirs themselves are kept, so dedicated mounts keep working) after
-listing them and asking for confirmation. Some of the data is owned by root, so this will need to run
-with **sudo** privileges.
+Empties this network's data dirs (chainstate, API database, signer) after listing them and asking for
+confirmation. It runs in a container, so no sudo is needed, and the dirs themselves are kept, so
+dedicated mounts keep working.
 
 ```bash
-sudo ./manage.sh -n <network> -a reset
+./manage.sh -n <network> -a reset
+# or, with the stack stopped: docker compose run --rm reset   (--yes to skip the prompt)
 ```
 
 ### Seed from the Hiro archive

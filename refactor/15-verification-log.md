@@ -393,6 +393,19 @@ Findings:
 
 Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing dates and never crossing networks), download (hash while writing, resume after a dropped connection, resume a partial file from an earlier run, no refetch of a complete file, a 404 fails without retries), extraction (staging, swap keeps the dir itself, symlinks, ownership, 5 path-escape refusals), local-pair rules, rename SQL, exit codes.
 
+### Phase 3b reset job — Linux x64, 2026-10-28 [V]
+
+`docker compose run --rm -T reset …` in project `sbd-reset` (testnet), after a short run had left root- and uid 70-owned data.
+
+| Step | Result |
+|---|---|
+| Stack running | Refused, exit 1 ("refusing to reset while stacks-blockchain, stacks-blockchain-api, postgres are running") |
+| No TTY, no `--yes` | Listed `stacks-blockchain`, `postgres`, then refused, exit 2 |
+| `--yes` | Deleted; the dirs were kept (same inode for `postgres`, which inside the container is a bind-mount point); 0 entries left; **no sudo** |
+| Run again | "no testnet data to delete", exit 0 |
+
+`manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |

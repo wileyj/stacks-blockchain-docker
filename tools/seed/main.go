@@ -48,8 +48,13 @@ func refuse(format string, a ...any) error { return exitError{2, fmt.Sprintf(for
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := runSeed(ctx, os.Args[1:], os.Getenv); err != nil {
-		fmt.Fprintf(os.Stderr, "seed: %v\n", err)
+	cmd, run := "seed", runSeed
+	if len(os.Args) > 1 && os.Args[1] == "reset" {
+		cmd, run = "reset", runReset
+		os.Args = os.Args[1:]
+	}
+	if err := run(ctx, os.Args[1:], os.Getenv); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", cmd, err)
 		var ee exitError
 		if errors.As(err, &ee) {
 			os.Exit(ee.code)
@@ -100,7 +105,7 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 	archiveURL := strings.TrimRight(orDefault(getenv("ARCHIVE_URL"), "https://archive.hiro.so"), "/")
 
 	fmt.Printf("seed: %s, pinned core %s / API %s / pg%d\n", network, pins.Core, pins.API, pins.PG)
-	if err := guardNotRunning(); err != nil {
+	if err := guardNotRunning("seed"); err != nil {
 		return err
 	}
 
@@ -121,7 +126,7 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 		fmt.Println("seed: dry run, nothing was changed")
 		return nil
 	}
-	if err := confirm(o.yes, network); err != nil {
+	if err := confirm(o.yes, fmt.Sprintf("replace the %s chainstate and API database", network)); err != nil {
 		return err
 	}
 
@@ -313,7 +318,7 @@ func localPair(network string, pins Pins, o options) (fileJob, fileJob, error) {
 
 // guardNotRunning refuses while any stack service is up: their names resolve on the compose network
 // only while their containers run (refactor/14 R5: the guard lives in the job, not in a CLI).
-func guardNotRunning() error {
+func guardNotRunning(job string) error {
 	var up []string
 	for _, svc := range []string{"stacks-blockchain", "stacks-blockchain-api", "postgres", "stacks-signer"} {
 		if addrs, err := net.LookupHost(svc); err == nil && len(addrs) > 0 {
@@ -325,7 +330,7 @@ func guardNotRunning() error {
 		if len(up) == 1 {
 			verb = "is"
 		}
-		return exitError{1, fmt.Sprintf("refusing to seed while %s %s running. Stop the stack first: docker compose --profile '*' down", strings.Join(up, ", "), verb)}
+		return exitError{1, fmt.Sprintf("refusing to %s while %s %s running. Stop the stack first: docker compose --profile '*' down", job, strings.Join(up, ", "), verb)}
 	}
 	if _, err := os.Stat(filepath.Join(pgDir, "postmaster.pid")); err == nil {
 		fmt.Println("seed: WARNING: postgres left a postmaster.pid (unclean shutdown); continuing because postgres isn't running")
@@ -347,14 +352,15 @@ func printPlan(chain, dump fileJob) {
 	fmt.Println("seed:   (built in a staging dir first; the old data stays until both are ready)")
 }
 
-func confirm(yes bool, network string) error {
+// confirm asks before a destructive step; without a TTY it needs --yes / CONFIRM=yes (Q12, exit 2).
+func confirm(yes bool, action string) error {
 	if yes {
 		return nil
 	}
 	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return refuse("not running interactively: re-run with --yes (or CONFIRM=yes) to replace the %s data", network)
+		return refuse("not running interactively: re-run with --yes (or CONFIRM=yes) to %s", action)
 	}
-	fmt.Printf("seed: replace the %s chainstate and API database? [y/N] ", network)
+	fmt.Printf("%s? [y/N] ", strings.ToUpper(action[:1])+action[1:])
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 		return refuse("aborted, nothing was changed")

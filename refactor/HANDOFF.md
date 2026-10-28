@@ -187,6 +187,15 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - `.tar.xz`/`.tar.gz` local archives;
 - a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
 
+## Phase 3b: reset job, done (2026-10-28)
+
+`seed reset` subcommand in the seed image; compose service `reset` (profile `reset`): `docker compose run --rm reset [--yes]`.
+- **Guard and confirmation:** the same as seed (refuses while the stack runs; TTY prompt or `--yes`/`CONFIRM=yes`, else exit 2).
+- **What it deletes:** it lists, then empties, the chainstate, postgres and signer dirs. It keeps the dirs themselves (D48) and needs no sudo.
+- **`manage.sh -a reset`** keeps its own existence and running checks, then runs the job.
+
+Verified live (15 "Phase 3b").
+
 ## Event replay dropped (owner, 2026-10-28; Q28)
 
 Archive snapshots replace it as the way to resync. Removed:

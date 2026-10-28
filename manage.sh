@@ -465,7 +465,8 @@ status() {
 }
 
 # Delete persistent data for NETWORK
-#     - empties each data dir but keeps the dir itself: it may be a mount point (D48, #152)
+#     - runs the compose `reset` job: it lists the data dirs, asks, and empties them inside a container
+#       (no sudo needed for root-owned files; the dirs themselves are kept, they may be mount points)
 reset_data() {
 	data_dirs
 	local existing=()
@@ -475,23 +476,11 @@ reset_data() {
 	if [ ${#existing[@]} -gt 0 ]; then
 		${VERBOSE} && log "Found existing data: ${existing[*]}"
 		if ! check_network "${PROFILE}"; then
-			log "Data to delete for ${COLYELLOW}${NETWORK}${COLRESET}:"
-			for dir in "${existing[@]}"; do
-				log "    ${COLCYAN}${dir}${COLRESET}"
-			done
-			# Exit if operation isn't confirmed
-			confirm "Delete Persistent data for ${COLYELLOW}${NETWORK}${COLRESET}?" || log_exit "Delete Cancelled"
-			for dir in "${existing[@]}"; do
-				${VERBOSE} && log "  Running: find ${dir} -mindepth 1 -delete"
-				find "${dir}" -mindepth 1 -delete >/dev/null 2>&1 || {
-					# Log error and exit if data wasn't deleted (permission denied etc)
-					log_error "Failed to empty ${COLCYAN}${dir}${COLRESET}"
-					log_exit "  Re-run the command with sudo: ${COLCYAN}sudo ${0} -n ${NETWORK} -a reset${COLRESET}"
-				}
-			done
-			log_info "Persistent data deleted"
-			echo
-			exit 0
+			compose_args "" "reset"
+			cmd="docker compose ${COMPOSE_ARGS} run --rm reset"
+			${VERBOSE} && log "Running: eval ${cmd}"
+			eval "${cmd}"
+			exit ${?}
 		else
 			# Log error and exit if services are already running
 			log_error "Can't reset while services are running"
