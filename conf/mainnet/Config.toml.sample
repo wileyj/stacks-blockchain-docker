@@ -5,11 +5,9 @@
 [burnchain]
 chain = 'bitcoin'
 mode = 'mainnet'
-password = 'foundation'
 peer_host = 'bitcoin.mainnet.stacks.org'
 peer_port = 8333
 rpc_port = 8332
-username = 'stacks'
 
 [connection_options]
 auth_token = '1234'
