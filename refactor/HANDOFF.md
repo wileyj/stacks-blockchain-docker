@@ -218,6 +218,18 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 [upstream-api-index-issue.md](./upstream-api-index-issue.md) tracks the rebuild of the API's hash index `nft_events_asset_identifier_index` on mainnet (**19 h 25 m**, measured): evidence, `pgstathashindex` structure, and a comparison of index options on the same data (a partial B-tree builds in 33 s and queries as fast; `COUNT(*) OVER()`, not the index, makes hot identifiers slow), plus the remaining checklist. **Tracking only; nothing filed upstream yet.** Locally it's mitigated by the seed's `--defer-index` + `build-indexes` job.
 
+## Phase 2: `sbd` CLI core, first increment (2026-10-29)
+
+`tools/sbd`: a Go module, standard library only, that shells out to `docker compose` (Q17) from the checkout (found upwards from the current dir, or `-C`).
+- **Model:** each command that changes something is a **plan**: `.env` edits plus `docker compose` argv (R4). `sbd plan <cmd>` / `--dry-run` prints it (`--json` too), and running the command executes exactly those steps. Guards (live state checks) run only on execution, so plans are deterministic.
+- **Commands:** `start|up` (`--network`, `--with`, `--without`, `--profiles`, persisted to `NETWORK`/`COMPOSE_PROFILES` in `.env`, R2), `stop|down`, `restart`, `status [--json]` (0 running / 1 not, §A.4), `logs|log [svc] [--tail N] [--no-follow]`, `logs export` (`exported-logs/<container>.log`), `pull|upgrade`, `seed` (arguments passed to the job unchanged), `reset`, `bns`, `config render`, `env get|set`, `doctor`. Global: `-C`, `-H/--host` (DOCKER_HOST), `--dry-run`, `-y/--yes`, `--json`.
+- **Contract kept:** `.env` auto-created from `sample.env` and backed up once per command to `.env.save` (§A.11); refuse `start` while running and `seed`/`reset`/`bns` while running (§A.8, the jobs refuse too); signer needs its key for the network (§A.10); no `-t` on `down` (stop grace period). Exit codes per Q1 (2 usage, 1 failure); a docker command's own exit code is passed through (a job's 2 = "needs --yes").
+- **Doctor:** Compose ≥ 2.24.0 (fail) / ≥ 2.27.2 (warn), daemon reachable, `.env`, `NETWORK`, `COMPOSE_PROFILES`, signer key, `docker compose config`, and containers running outside `COMPOSE_PROFILES`.
+- **Tests:** plan goldens for every command, guards, exit codes, `.env` round trips, status (both `ps --format json` shapes), doctor, and **`TestPlansAreDocumented`**: every compose command a plan runs must appear in `docs/usage.md`, which now leads with a plain-Compose ⇔ `sbd` table. CI runs gofmt/vet/tests in the `static` job.
+- **Verified live** (scratch project `sbd-cli`, testnet node+api, via `COMPOSE_PROJECT_NAME`/`COMPOSE_FILE` in its `.env`): doctor, plan, `env set` creating `.env`, start, status/`--json`, refusals (start/reset while running), logs, logs export, stop (10 s), status exit 1, `reset --yes` without a TTY. The seed job refuses even its own `--dry-run` while the stack runs.
+
+**Next increments:** `manage.sh` shim (old args → `sbd`, deprecation notice, harness goldens mapped to `sbd plan`); `migrate`; `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
+
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 
 The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.
