@@ -28,6 +28,8 @@ jobs:
         run: .github/ci/compose-config.sh
       - name: build the seed job image (runs its unit tests)
         run: docker build -q -f tools/seed/Dockerfile -t seed-ci .
+      - name: sbd CLI (gofmt, vet, unit tests incl. plans documented in docs/usage.md)
+        run: docker run --rm -v "$PWD":/r -w /r/tools/sbd golang:1.25 sh -c 'test -z "$(gofmt -l .)" && go vet ./... && go test ./...'
       - name: monitoring rules (promtool check + unit tests) and dashboards (valid JSON)
         run: |
           docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.15.0 check rules conf/monitoring/rules/stacks.yml

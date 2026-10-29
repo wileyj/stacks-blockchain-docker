@@ -4,7 +4,7 @@
 --- stdin: n
 --- exit code: 0
 --- output (first 30 lines):
-
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files

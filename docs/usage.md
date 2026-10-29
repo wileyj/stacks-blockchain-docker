@@ -1,7 +1,46 @@
-# Script Options
+# Usage
 
-`./manage.sh` wraps the root [`compose.yaml`](../compose.yaml). Each section below also shows the plain
-`docker compose` equivalent (run from the repo root; `COMPOSE_PROFILES` in `.env` selects the services).
+The stack is the root [`compose.yaml`](../compose.yaml), and plain `docker compose` (run from the repo
+root) is a complete way to use it: `.env` holds every setting, with `NETWORK` and `COMPOSE_PROFILES`
+choosing the network and the services. Two optional helpers sit on top and run the same commands:
+
+- **`sbd`**, a single binary (Linux, macOS, Windows) with preflight checks (`sbd doctor`), friendly
+  validation, `--json` output and `sbd plan <command>`, which prints the exact `.env` edits and
+  `docker compose` commands instead of running them.
+- **`./manage.sh`**, the original script (bash; see "Script options" below). **Deprecated**: it keeps
+  working unchanged for now and will be removed in a later release.
+
+## Plain Docker Compose and `sbd`
+
+| Task | Plain Docker Compose | `sbd` |
+|---|---|---|
+| Start the services in `COMPOSE_PROFILES` | `docker compose up -d` | `sbd start` |
+| Change network or services | edit `NETWORK` / `COMPOSE_PROFILES` in `.env`, then `docker compose up -d` | `sbd start --network testnet --with signer,monitoring` (also `--without`, `--profiles`) |
+| Stop (node first, graceful) | `docker compose --profile '*' down` | `sbd stop` |
+| Restart | `docker compose --profile '*' down`, then `docker compose up -d` | `sbd restart` |
+| Status | `docker compose --profile '*' ps --all` | `sbd status [--json]` (exit 0 = running, 1 = not) |
+| Follow the logs | `docker compose logs -f --tail 100` | `sbd logs` |
+| One service's logs | `docker compose logs -f --tail 100 <service>` | `sbd logs <service>` |
+| Export every container's log | `docker compose --profile '*' logs --no-color --timestamps <service> > exported-logs/<container>.log` | `sbd logs export` |
+| Pull the images pinned in `.env` | `docker compose pull --ignore-buildable` | `sbd pull` |
+| Render `Config.toml`/`Signer.toml` (`up` does it too) | `docker compose run --rm config` | `sbd config render` |
+| Seed from the Hiro archive (stopped stack) | `docker compose run --rm seed` | `sbd seed [seed options]` |
+| Delete this network's data (stopped stack) | `docker compose run --rm reset --yes` (without `--yes`, it asks on a terminal) | `sbd reset [--yes]` |
+| Download legacy BNS data (stopped stack) | `docker compose run --rm bns` | `sbd bns` |
+| Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
+| Preflight checks | — | `sbd doctor` |
+| Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
+
+`sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
+when there is none, and refuses `seed`, `reset` and `bns` while the stack runs; the jobs refuse on their
+own too, so plain Compose is just as safe. Build it with Go 1.25 (`cd tools/sbd && go build -o sbd .`),
+or without Go: `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
+
+# Script options (deprecated)
+
+`./manage.sh` is deprecated and will be removed; it prints a notice on stderr. It wraps the same
+[`compose.yaml`](../compose.yaml). Each section below also shows the
+plain `docker compose` equivalent.
 
 ## Usage
 

@@ -2,6 +2,7 @@
 --- args: ./manage.sh -n testnet -a export
 --- exit code: 1
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 [ Exit Error ]   Event replay (import/export) was removed. To resync, seed from the Hiro archive: docker compose run --rm seed
 --- docker calls:
 --- filesystem side effects:

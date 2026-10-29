@@ -4,6 +4,7 @@
 --- stdin: y
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 [ Warn ]         ⚠️  WARNING
 [ Warn ]         ⚠️  MacOS M1 CPU detected - NOT recommended for this repo

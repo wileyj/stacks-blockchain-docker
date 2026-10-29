@@ -2,6 +2,7 @@
 --- args: ./manage.sh -n mainnet -a bns
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 [ Error ]        Undefined or commented BNS_IMPORT_DIR variable in <REPO>/.env
 --- docker calls:

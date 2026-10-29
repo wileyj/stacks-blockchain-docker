@@ -2,6 +2,7 @@
 --- args: ./manage.sh -a start -n
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 [ Error ]        Missing required value for -n
 
 Usage:                    

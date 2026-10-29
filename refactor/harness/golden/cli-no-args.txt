@@ -2,6 +2,7 @@
 --- args: ./manage.sh 
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 Usage:                    
     ./manage.sh -n <network> -a <action> <optional args> 

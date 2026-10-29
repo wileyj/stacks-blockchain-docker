@@ -35,11 +35,12 @@ tests:
         alertname: StacksTipStalled
         exp_alerts: []
 
-  ## API lag: recording rule value and the alert after 10m above 10 blocks
+  ## API lag: recording rule value and the alert after 10m above 10 blocks. The lag is 0 for 10m,
+  ## then a constant 20 (so the alert's {{ $value }} doesn't depend on which sample is evaluated)
   - interval: 1m
     input_series:
       - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
-        values: '1000+2x30'
+        values: '1000+1x9 1030+1x20'
       - series: 'stacks_block_height{job="stacks-api"}'
         values: '1000+1x30'
     promql_expr_test:
@@ -57,7 +58,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning}
             exp_annotations:
-              summary: "API is 25 blocks behind the node"
+              summary: "API is 20 blocks behind the node"
               description: "The API isn't keeping up with the node's events. Check the API and postgres logs."
 
   ## A down target alerts only after the 15m header-sync grace

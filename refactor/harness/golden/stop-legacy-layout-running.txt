@@ -3,6 +3,7 @@
 --- stub env: STUB_RUNNING=1 STUB_LEGACY=1
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 Stopping services started with the previous compose-files layout 
 Stopping stacks-blockchain 
 Stopping stacks-signer 

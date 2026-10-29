@@ -2,6 +2,7 @@
 --- args: ./manage.sh -n mainnet -a status
 --- exit code: 1
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 Stacks Blockchain services are not running 
 --- docker calls:

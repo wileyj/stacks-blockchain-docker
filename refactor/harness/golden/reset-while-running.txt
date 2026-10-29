@@ -4,6 +4,7 @@
 --- pre: mkdir -p persistent-data/mainnet/postgres
 --- exit code: 1
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 [ Error ]        Can't reset while services are running
 [ Exit Error ]     Try again after running: ./manage.sh -n mainnet -a stop
 --- docker calls:

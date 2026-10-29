@@ -194,7 +194,7 @@ Target:
 
 | Item | Plan |
 |---|---|
-| `manage.sh` | Keep for one release as a **thin shim** that maps old args to the new CLI (`-n mainnet -a start -f signer` → `sbd start --network mainnet --with signer`) and prints a deprecation notice; then remove |
+| `manage.sh` | **Owner, 2026-10-29: no shim.** It stays as it is (it already wraps the root `compose.yaml`), prints a deprecation notice on stderr, and is removed in phase 7. *(Was: a thin shim mapping old args to `sbd` for one release.)* |
 | Existing installs | `sbd migrate`: read the existing `.env`, `conf/*/Config.toml` (keeping user edits as overrides) and `persistent-data/` layout (bind-mount backend), with no data movement required |
 | Container names / network name | Keep (contract §A.19–20 in [11](./11-refactor-guidance.md)) unless Q7 (multi-instance) is chosen; if they change, `migrate` handles it |
 | Docs | Two equal paths in the README: **"with plain Docker Compose"** (the §11 table) and **"with the `sbd` helper"**. Each CLI section shows its compose equivalent |

@@ -2,6 +2,7 @@
 --- args: ./manage.sh -n mainnet -a start -f foo,PROXY
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 Creating data dir <REPO>/persistent-data/mainnet/stacks-blockchain 
 Creating data dir <REPO>/persistent-data/mainnet/postgres 
 Creating data dir <REPO>/persistent-data/mainnet/stacks-signer 
