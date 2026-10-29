@@ -183,7 +183,9 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 
 **Phase 3c (2026-10-28), done** (15 "Phase 3c mainnet seed"):
 - **Mainnet seed verified:** a 1 h 01 m download (4 connections, about 100 MiB/s), then with `--defer-index nft_events_asset_identifier_index` a 2 h 00 m restore, and node + API up **39 s** after `up`. The deferred index builds in the background (`build-indexes`), and the stack in `/stacks/temp/sbd-mainnet` was left running for it.
-- **Native extraction:** GNU tar with zstd/xz/gzip, in the seed image now on **Debian** `postgres:<ver>` (+ `ca-certificates`); the postgres uid is looked up at runtime. Benchmarked: container on glibc = host; Alpine musl about 40% slower; the Go decoder about 30% slower.
+- **Native extraction:** GNU tar with zstd/xz/gzip. The seed image is **the stack's postgres image** (`postgres:<ver>-alpine`): a Debian (glibc) restore server builds text indexes that the Alpine (musl) postgres finds misordered (amcheck failures, API ingestion crashes; 15 "Run 3"). musl extraction is about 40% slower than glibc, but runs in parallel with the longer restore. The owner chose to keep Alpine for the stack.
+- **Node-local files:** `peer.sqlite*` and `event_observers.sqlite*` from the archive node are not extracted; the node creates them. This didn't change the burn-height lag after a seed, which is stacks-core pacing sortitions during catch-up.
+- **Re-seed over used data:** the restore gets search permission on the 0700 postgres data dir; a failed restore cancels the extraction; `build-indexes` ignores server warnings on stderr.
 - **Deferred indexes:** `--defer-index` / `SEED_DEFER_INDEXES`, and the `build-indexes` job (api profile). Verified on testnet and mainnet.
 - **Restore tuning:** parallel maintenance workers, `SEED_PG_MAINTENANCE_MEM`, and restore progress (database size and current steps).
 

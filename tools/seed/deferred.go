@@ -95,9 +95,12 @@ func runBuildIndexes(ctx context.Context, args []string, getenv func(string) str
 		}
 		cmd := exec.CommandContext(ctx, "psql", args...)
 		cmd.Env = append(os.Environ(), "PGPASSWORD="+orDefault(getenv("PG_PASSWORD"), "postgres"))
-		out, err := cmd.CombinedOutput()
+		// Only stdout is the result: a server WARNING on stderr must not be read as one
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("%s: %w: %s", sqls[len(sqls)-1], err, strings.TrimSpace(string(out)))
+			return "", fmt.Errorf("%s: %w: %s", sqls[len(sqls)-1], err, strings.TrimSpace(stderr.String()))
 		}
 		return strings.TrimSpace(string(out)), nil
 	}

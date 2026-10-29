@@ -47,14 +47,26 @@ func ArchiveBase(name string) string {
 	return name
 }
 
+// NodeLocalState are the archive node's own databases, not chain data (tar --exclude patterns, matched
+// at any depth). peer.sqlite holds its peer list, which kept a seeded mainnet node at a stale burn
+// height until removed; event_observers.sqlite holds its pending event deliveries. The node recreates
+// both on start (refactor/15 "Phase 3c").
+var NodeLocalState = []string{"peer.sqlite*", "event_observers.sqlite*"}
+
 // ExtractArchive extracts a chainstate archive into dest (existing, empty) with GNU tar, which picks
 // the decompressor from the file itself (zstd, xz, gzip or none): a new archive format needs a package
-// in the image, not code. On glibc, zstd + GNU tar extract about 30% faster than a Go decoder and as
-// fast as on the host (refactor/15 "Phase 3c"). GNU tar strips leading "/" and refuses ".." members
+// in the image, not code. The image is Alpine, like the stack's postgres (see the Dockerfile), so this
+// is about 40% slower than on glibc, but it runs in parallel with the longer restore (refactor/15
+// "Phase 3c"). GNU tar strips leading "/" and refuses ".." members
 // and writes through symlinks. Files get the data dir's owner instead of the archive's (uid 1001).
+// NodeLocalState is left out.
 func ExtractArchive(ctx context.Context, archive, dest string, owner Owner, p *Progress) error {
 	var stderr strings.Builder
-	cmd := exec.CommandContext(ctx, "tar", "-x", "-f", archive, "-C", dest, "--no-same-owner")
+	args := []string{"-x", "-f", archive, "-C", dest, "--no-same-owner"}
+	for _, pat := range NodeLocalState {
+		args = append(args, "--exclude="+pat)
+	}
+	cmd := exec.CommandContext(ctx, "tar", args...)
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return err

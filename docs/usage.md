@@ -118,7 +118,9 @@ dedicated mounts keep working.
 ### Seed from the Hiro archive
 
 Restores the chainstate and the API database from a snapshot instead of syncing from genesis. See the
-README for details; the stack must be stopped.
+README for details; the stack must be stopped. The archive node's own databases (`peer.sqlite`, its
+peer list, and `event_observers.sqlite`, its pending event deliveries) are left out: the node creates
+new ones and finds its peers from the bootstrap node.
 
 ```bash
 docker compose --profile '*' down

@@ -31,7 +31,7 @@ const (
 // then the database/schema renames the API expects (same as the old seed-chainstate.sh). The server
 // is stopped cleanly and the data flushed before returning.
 func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
-	// The image's postgres user (999 in the Debian images, 70 in Alpine): whatever this image has
+	// The image's postgres user (70 in the Alpine images): whatever this image has
 	u, err := user.Lookup("postgres")
 	if err != nil {
 		return fmt.Errorf("no postgres user in the image: %w", err)
@@ -44,6 +44,14 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 	if err := os.Chmod(pgdata, 0o700); err != nil {
 		return err
 	}
+	// The staging dir sits inside the postgres data dir, which a previous stack left 0700 and owned by
+	// the stack's postgres user: this image's postgres user must be able to pass through it (they are
+	// the same user unless the images differ). The original mode comes back afterwards (and the stack's entrypoint resets it to 0700)
+	restoreMode, err := allowTraverse(filepath.Dir(pgdata))
+	if err != nil {
+		return err
+	}
+	defer restoreMode()
 	pwfile := filepath.Join(os.TempDir(), "seed-pg-pw")
 	if err := os.WriteFile(pwfile, []byte(pg.Password+"\n"), 0o600); err != nil {
 		return err
@@ -187,6 +195,23 @@ func renameSQL(pg PG) [][2]string {
 			[2]string{"template1", fmt.Sprintf("ALTER DATABASE %s RENAME TO %s", dumpSchema, quoteIdent(pg.Database))})
 	}
 	return out
+}
+
+// allowTraverse adds search (x) permission for everyone to dir and returns a func that restores its
+// mode. Nothing becomes listable or readable.
+func allowTraverse(dir string) (restore func(), err error) {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	mode := fi.Mode().Perm()
+	if mode&0o001 != 0 {
+		return func() {}, nil
+	}
+	if err := os.Chmod(dir, mode|0o001); err != nil {
+		return nil, err
+	}
+	return func() { os.Chmod(dir, mode) }, nil
 }
 
 func quoteIdent(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }

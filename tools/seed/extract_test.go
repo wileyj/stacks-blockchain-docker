@@ -3,6 +3,8 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,6 +60,9 @@ func TestExtractStagingAndSwap(t *testing.T) {
 		{name: "krypton/headers.sqlite", body: "headers", typ: tar.TypeReg},
 		{name: "krypton/chainstate/vm/index.sqlite", body: "index", typ: tar.TypeReg},
 		{name: "krypton/current", link: "chainstate", typ: tar.TypeSymlink},
+		{name: "krypton/peer.sqlite", body: "peers", typ: tar.TypeReg},
+		{name: "krypton/peer.sqlite-wal", body: "peers", typ: tar.TypeReg},
+		{name: "event_observers.sqlite", body: "pending", typ: tar.TypeReg},
 	})
 	data := filepath.Join(tmp, "stacks-blockchain") // stands in for a mount point
 	os.MkdirAll(filepath.Join(data, "mainnet-old"), 0o755)
@@ -90,7 +95,7 @@ func TestExtractStagingAndSwap(t *testing.T) {
 	if l, _ := os.Readlink(filepath.Join(data, "krypton", "current")); l != "chainstate" {
 		t.Errorf("symlink not restored: %q", l)
 	}
-	for _, gone := range []string{"mainnet-old", StagingName} {
+	for _, gone := range []string{"mainnet-old", StagingName, "krypton/peer.sqlite", "krypton/peer.sqlite-wal", "event_observers.sqlite"} {
 		if _, err := os.Stat(filepath.Join(data, gone)); err == nil {
 			t.Errorf("%s must be gone after the swap", gone)
 		}
@@ -186,5 +191,34 @@ func TestArchiveBase(t *testing.T) {
 		if got := ArchiveBase(in); got != want {
 			t.Errorf("ArchiveBase(%s) = %s", in, got)
 		}
+	}
+}
+
+func TestAllowTraverse(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0o700)
+	restore, err := allowTraverse(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(dir); fi.Mode().Perm() != 0o701 {
+		t.Errorf("during the restore: mode %o, want 701", fi.Mode().Perm())
+	}
+	restore()
+	if fi, _ := os.Stat(dir); fi.Mode().Perm() != 0o700 {
+		t.Errorf("after: mode %o, want 700", fi.Mode().Perm())
+	}
+}
+
+func TestBothCancelsTheOtherOnFailure(t *testing.T) {
+	boom := errors.New("restore failed")
+	err := both(t.Context(),
+		func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }, // a long extraction
+		func(context.Context) error { return boom })
+	if !errors.Is(err, boom) {
+		t.Errorf("got %v, want the first failure", err)
+	}
+	if err := both(t.Context(), func(context.Context) error { return nil }, func(context.Context) error { return nil }); err != nil {
+		t.Errorf("both succeeded, got %v", err)
 	}
 }

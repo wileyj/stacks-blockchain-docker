@@ -72,7 +72,7 @@ func main() {
 type options struct {
 	yes, dryRun, keep   bool
 	chainFile, dumpFile string
-	deferIdx              listFlag
+	deferIdx            listFlag
 }
 
 // listFlag is a repeatable string flag.
@@ -155,7 +155,7 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 	}
 
 	// 1. Get and verify both files (in parallel)
-	if err := both(func() error { return chain.obtain(ctx, d) }, func() error { return dump.obtain(ctx, d) }); err != nil {
+	if err := both(ctx, func(ctx context.Context) error { return chain.obtain(ctx, d) }, func(ctx context.Context) error { return dump.obtain(ctx, d) }); err != nil {
 		return fmt.Errorf("%w (no data was changed)", err)
 	}
 
@@ -179,9 +179,11 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 	extractP := &Progress{Name: "extract " + filepath.Base(chain.path), Total: chain.size}
 	done := make(chan struct{})
 	go Report(done, 30*time.Second, extractP)
-	err = both(
-		func() error { return ExtractArchive(ctx, chain.path, chainStaging, chainOwner, extractP) },
-		func() error { return RestoreDump(ctx, dump.path, pgStaging, pg) },
+	err = both(ctx,
+		func(ctx context.Context) error {
+			return ExtractArchive(ctx, chain.path, chainStaging, chainOwner, extractP)
+		},
+		func(ctx context.Context) error { return RestoreDump(ctx, dump.path, pgStaging, pg) },
 	)
 	close(done)
 	if err != nil {
@@ -394,15 +396,23 @@ func confirm(yes bool, action string) error {
 	return nil
 }
 
-func both(a, b func() error) error {
+// both runs a and b in parallel. The first failure cancels the other (no point extracting for hours
+// after the restore failed) and is the error returned.
+func both(ctx context.Context, a, b func(context.Context) error) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for i, f := range []func() error{a, b} {
+	for _, f := range []func(context.Context) error{a, b} {
 		wg.Add(1)
-		go func() { defer wg.Done(); errs[i] = f() }()
+		go func() {
+			defer wg.Done()
+			if err := f(ctx); err != nil {
+				cancel(err)
+			}
+		}()
 	}
 	wg.Wait()
-	return errors.Join(errs...)
+	return context.Cause(ctx)
 }
 
 func get(ctx context.Context, d *Downloader, url string) (string, error) {
