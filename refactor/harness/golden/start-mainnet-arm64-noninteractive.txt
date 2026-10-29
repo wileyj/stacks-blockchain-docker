@@ -3,12 +3,12 @@
 --- stub env: STUB_ARCH=arm64
 --- exit code: 142 (TIMEOUT after 15s - script hung)
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 [ Warn ]         ⚠️  WARNING
 [ Warn ]         ⚠️  MacOS M1 CPU detected - NOT recommended for this repo
 [ Warn ]         ⚠️  see README for details
 [ Warn ]         ⚠️      https://github.com/stacks-network/stacks-blockchain-docker/blob/master/docs/requirements.md#macos-with-an-m1-processor-is-not-recommended-for-this-repo
- invalid input 
  invalid input 
  invalid input 
  invalid input 

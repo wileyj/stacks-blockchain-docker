@@ -228,7 +228,9 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 - **Tests:** plan goldens for every command, guards, exit codes, `.env` round trips, status (both `ps --format json` shapes), doctor, and **`TestPlansAreDocumented`**: every compose command a plan runs must appear in `docs/usage.md`, which now leads with a plain-Compose ⇔ `sbd` table. CI runs gofmt/vet/tests in the `static` job.
 - **Verified live** (scratch project `sbd-cli`, testnet node+api, via `COMPOSE_PROJECT_NAME`/`COMPOSE_FILE` in its `.env`): doctor, plan, `env set` creating `.env`, start, status/`--json`, refusals (start/reset while running), logs, logs export, stop (10 s), status exit 1, `reset --yes` without a TTY. The seed job refuses even its own `--dry-run` while the stack runs.
 
-**Next increments:** `manage.sh` shim (old args → `sbd`, deprecation notice, harness goldens mapped to `sbd plan`); `migrate`; `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
+**`manage.sh`: no shim (owner, 2026-10-29).** It is transitional (removed in phase 7), so it is not rewritten over `sbd`: its behaviour stays as it is, it prints a deprecation notice on stderr, and the docs mark it deprecated. Harness goldens were re-recorded for the notice only (48 files: the notice line; an empty output's blank line and, in the arm64 prompt scenario, the 30th line move accordingly). Phase 7 removes `manage.sh` and its harness; the scenarios that matter (refusals, exit codes, signer key) are covered by `sbd`'s tests.
+
+**Next increments:** `migrate`; `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

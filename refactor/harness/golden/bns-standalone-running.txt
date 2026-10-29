@@ -4,6 +4,7 @@
 --- .env overrides: BNS_IMPORT_DIR=/bns-data
 --- exit code: 1
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 
 [ Error ]        Refusing to download BNS data - services need to be stopped first
 [ Exit Error ]       Stop the services with: ./manage.sh -n mainnet -a stop

@@ -568,6 +568,9 @@ if ! docker compose version >/dev/null 2>&1; then
 	log_exit "Missing command: docker compose (Docker Compose v2 required)"
 fi
 
+# Deprecated: removed in a later release. stderr only, so output parsed by scripts is unchanged
+echo "${WARN}manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)" >&2
+
 # If no args are provided, print usage
 if [[ ${#} -eq 0 ]]; then
 	${VERBOSE} && log "No args provided"

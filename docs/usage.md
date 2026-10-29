@@ -7,7 +7,8 @@ choosing the network and the services. Two optional helpers sit on top and run t
 - **`sbd`**, a single binary (Linux, macOS, Windows) with preflight checks (`sbd doctor`), friendly
   validation, `--json` output and `sbd plan <command>`, which prints the exact `.env` edits and
   `docker compose` commands instead of running them.
-- **`./manage.sh`**, the original script (bash; see "Script options" below).
+- **`./manage.sh`**, the original script (bash; see "Script options" below). **Deprecated**: it keeps
+  working unchanged for now and will be removed in a later release.
 
 ## Plain Docker Compose and `sbd`
 
@@ -34,9 +35,10 @@ when there is none, and refuses `seed`, `reset` and `bns` while the stack runs; 
 own too, so plain Compose is just as safe. Build it with Go 1.25 (`cd tools/sbd && go build -o sbd .`),
 or without Go: `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
 
-# Script options
+# Script options (deprecated)
 
-`./manage.sh` wraps the same [`compose.yaml`](../compose.yaml). Each section below also shows the
+`./manage.sh` is deprecated and will be removed; it prints a notice on stderr. It wraps the same
+[`compose.yaml`](../compose.yaml). Each section below also shows the
 plain `docker compose` equivalent.
 
 ## Usage

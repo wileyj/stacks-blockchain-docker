@@ -4,6 +4,7 @@
 --- pre: ./manage.sh -n mainnet -a start -f signer
 --- exit code: 0
 --- output (first 30 lines):
+[ Warn ] manage.sh is deprecated and will be removed: use docker compose or sbd instead (docs/usage.md)
 Starting all services for stacks-blockchain 
 [ Success ]      Brought up mainnet
     Follow logs: ./manage.sh -n mainnet -a logs 
