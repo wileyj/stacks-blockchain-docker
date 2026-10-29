@@ -368,6 +368,8 @@ var Commands = []*Command{
 	{Name: "config", Usage: "config render", Help: "Render Config.toml/Signer.toml now (start does this too)", Plan: configPlan},
 	{Name: "env", Usage: "env get [KEY...] | env set KEY=VALUE...", Help: "Read or change settings in .env",
 		Run: envRun},
+	{Name: "migrate", Usage: "migrate", Help: "Update an install from the old layout (.env, hand-edited Config.toml); moves no data",
+		Plan: migratePlan},
 	{Name: "doctor", Usage: "doctor [--json]", Help: "Check Docker, Compose, .env and the running services", Run: doctorRun},
 }
 

@@ -29,6 +29,7 @@ choosing the network and the services. Two optional helpers sit on top and run t
 | Download legacy BNS data (stopped stack) | `docker compose run --rm bns` | `sbd bns` |
 | Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
 | Preflight checks | — | `sbd doctor` |
+| Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
 when there is none, and refuses `seed`, `reset` and `bns` while the stack runs; the jobs refuse on their

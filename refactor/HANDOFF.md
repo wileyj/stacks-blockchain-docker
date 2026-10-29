@@ -230,7 +230,13 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **`manage.sh`: no shim (owner, 2026-10-29).** It is transitional (removed in phase 7), so it is not rewritten over `sbd`: its behaviour stays as it is, it prints a deprecation notice on stderr, and the docs mark it deprecated. Harness goldens were re-recorded for the notice only (48 files: the notice line; an empty output's blank line and, in the arm64 prompt scenario, the 30th line move accordingly). Phase 7 removes `manage.sh` and its harness; the scenarios that matter (refusals, exit codes, signer key) are covered by `sbd`'s tests.
 
-**Next increments:** `migrate`; `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
+**`sbd migrate` (2026-10-29):** brings an old-layout install up to date without moving data; `sbd plan migrate` previews it.
+- Adds `COMPOSE_PROFILES` when `.env` lacks it (`node,api`, plus `signer` when the old `Config.toml` had `stacker = true` **and** the network's signer key is set); without it `docker compose up -d` starts only the config job.
+- A hand-edited `Config.toml` (or the `Config.toml.legacy*` the config job moved aside): runs **`docker compose run --rm config suggest`**, a new renderer subcommand that writes `Config.overrides.toml.suggested` with the user's own settings, for review (it never writes `Config.overrides.toml`). Left out: upstream network-definition keys (bootstrap node, epochs, balances: the D50 trap), the rendered API/signer observers, and keys rendered from `.env` (BTC peer/ports/credentials, `auth_token`, `prometheus_bind`, `stacker`), which are reported with the variable to set. Keys the new config lacks are listed for checking.
+- Reports obsolete `.env` keys (`STACKS_EXPORT_EVENTS_FILE`), an unused `event-replay` data dir, and running containers of the old `compose-files` project.
+- Verified end to end on a copy with the `d2e558c` `.env` and a hand-edited `Config.toml`: profiles added, suggestion correct (two user edits and a custom observer; nothing from the network definition), accepted, rendered, and `check-config` passed.
+
+**Next increments:** `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

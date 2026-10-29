@@ -20,6 +20,7 @@ type Step struct {
 	SetValue  string   `json:"set_value,omitempty"`  //
 	Docker    []string `json:"docker,omitempty"`     // docker <args>
 	Stdout    string   `json:"stdout,omitempty"`     // redirect docker's stdout to this file (relative to the project)
+	Note      string   `json:"note,omitempty"`       // information for the user; changes nothing
 }
 
 func compose(args ...string) Step { return Step{Docker: append([]string{"compose"}, args...)} }
@@ -27,6 +28,8 @@ func compose(args ...string) Step { return Step{Docker: append([]string{"compose
 // String renders a step as the shell command (or edit) a user would type.
 func (s Step) String() string {
 	switch {
+	case s.Note != "":
+		return "# " + s.Note
 	case s.CreateEnv:
 		return "cp sample.env .env"
 	case s.SetKey != "":
@@ -71,6 +74,8 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 	backedUp := false
 	for _, s := range p {
 		switch {
+		case s.Note != "":
+			fmt.Fprintln(os.Stderr, "sbd:", s.Note)
 		case s.CreateEnv:
 			b, err := os.ReadFile(filepath.Join(dir, "sample.env"))
 			if err != nil {

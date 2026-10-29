@@ -28,6 +28,14 @@ func main() {
 	}
 	confRoot := flag.String("conf", "/conf", "directory holding conf/<network>/")
 	flag.Parse()
+	// `config suggest` writes Config.overrides.toml.suggested from a legacy Config.toml (sbd migrate)
+	if flag.Arg(0) == "suggest" {
+		if err := runSuggest(*confRoot, os.Getenv); err != nil {
+			fmt.Fprintf(os.Stderr, "config: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(*confRoot, os.Getenv); err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		os.Exit(1)
