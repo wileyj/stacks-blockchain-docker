@@ -181,11 +181,29 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - **Cleanup:** downloads this run created are deleted unless `--keep-downloads`; your own files never are.
 - Fixes D01, D17–D19, D43, D48, D49 (no second read), D52, D53 for the compose path. `scripts/seed-chainstate.sh` stays as the fallback.
 
-**Not done (Q21 remainder):**
-- multi-connection segmented downloads (aria2-style; hashing while downloading needs a single stream, so it would mean a re-read);
-- a streaming download-to-extract mode without storing the archive;
-- `.tar.xz`/`.tar.gz` local archives;
-- a live mainnet run (the 380 GB local pair in `/stacks/temp/mainnet` could be used; hours, ~1.5 TB); and `reset` as a job (Phase 3b).
+**Phase 3c (2026-10-28), done** (15 "Phase 3c mainnet seed"):
+- **Mainnet seed verified:** a 1 h 01 m download (4 connections, about 100 MiB/s), then with `--defer-index nft_events_asset_identifier_index` a 2 h 00 m restore, and node + API up **39 s** after `up`. The deferred index builds in the background (`build-indexes`), and the stack in `/stacks/temp/sbd-mainnet` was left running for it.
+- **Native extraction:** GNU tar with zstd/xz/gzip. The seed image is **the stack's postgres image** (`postgres:<ver>-alpine`): a Debian (glibc) restore server builds text indexes that the Alpine (musl) postgres finds misordered (amcheck failures, API ingestion crashes; 15 "Run 3"). musl extraction is about 40% slower than glibc, but runs in parallel with the longer restore. The owner chose to keep Alpine for the stack.
+- **Node-local files:** `peer.sqlite*` and `event_observers.sqlite*` from the archive node are not extracted; the node creates them. This didn't change the burn-height lag after a seed, which is stacks-core pacing sortitions during catch-up.
+- **Re-seed over used data:** the restore gets search permission on the 0700 postgres data dir; a failed restore cancels the extraction; `build-indexes` ignores server warnings on stderr.
+- **Deferred indexes:** `--defer-index` / `SEED_DEFER_INDEXES`, and the `build-indexes` job (api profile). Verified on testnet and mainnet.
+- **Restore tuning:** parallel maintenance workers, `SEED_PG_MAINTENANCE_MEM`, and restore progress (database size and current steps).
+
+**Earlier in Phase 3c:**
+- **Segmented downloads:** `SEED_CONNECTIONS` parallel Range requests per file (default 4), still hashed while downloading: chunks are read back in order from the page cache. Resumable through `<file>.parts`, retried per chunk, with a single-stream fallback if the server ignores ranges.
+- **Local formats:** `.tar.gz`/`.tgz`, `.tar.xz` and `.tar` archives.
+- **Mainnet run:** see 15 "Phase 3c".
+
+**Not done:** a streaming download-to-extract mode that doesn't store the archive (no resume, so of limited value).
+
+## Phase 3b: reset job, done (2026-10-28)
+
+`seed reset` subcommand in the seed image; compose service `reset` (profile `reset`): `docker compose run --rm reset [--yes]`.
+- **Guard and confirmation:** the same as seed (refuses while the stack runs; TTY prompt or `--yes`/`CONFIRM=yes`, else exit 2).
+- **What it deletes:** it lists, then empties, the chainstate, postgres and signer dirs. It keeps the dirs themselves (D48) and needs no sudo.
+- **`manage.sh -a reset`** keeps its own existence and running checks, then runs the job.
+
+Verified live (15 "Phase 3b").
 
 ## Event replay dropped (owner, 2026-10-28; Q28)
 
@@ -195,6 +213,10 @@ Archive snapshots replace it as the way to resync. Removed:
 - `manage.sh`'s replay guard (4 `docker logs` calls on every start/stop) and the `event_replay` function. `-a import` and `-a export` now exit 1 pointing to `docker compose run --rm seed`.
 
 Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers recovery via seed and BNS v1 on API 9.x. Harness: the replay scenarios are replaced by `import-removed` and `export-removed` (48/48). D09/D37/D38 are closed; contract §A.7 and §A.23 retired.
+
+## Upstream tracking: API index rebuild (2026-10-28)
+
+[upstream-api-index-issue.md](./upstream-api-index-issue.md) tracks the rebuild of the API's hash index `nft_events_asset_identifier_index` on mainnet (**19 h 25 m**, measured): evidence, `pgstathashindex` structure, and a comparison of index options on the same data (a partial B-tree builds in 33 s and queries as fast; `COUNT(*) OVER()`, not the index, makes hot identifiers slow), plus the remaining checklist. **Tracking only; nothing filed upstream yet.** Locally it's mitigated by the seed's `--defer-index` + `build-indexes` job.
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

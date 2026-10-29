@@ -106,18 +106,21 @@ _Note that each time you run this command the log files will be overwritten._
 
 ### Delete all chainstate data
 
-Empties this network's data dirs (the dirs themselves are kept, so dedicated mounts keep working) after
-listing them and asking for confirmation. Some of the data is owned by root, so this will need to run
-with **sudo** privileges.
+Empties this network's data dirs (chainstate, API database, signer) after listing them and asking for
+confirmation. It runs in a container, so no sudo is needed, and the dirs themselves are kept, so
+dedicated mounts keep working.
 
 ```bash
-sudo ./manage.sh -n <network> -a reset
+./manage.sh -n <network> -a reset
+# or, with the stack stopped: docker compose run --rm reset   (--yes to skip the prompt)
 ```
 
 ### Seed from the Hiro archive
 
 Restores the chainstate and the API database from a snapshot instead of syncing from genesis. See the
-README for details; the stack must be stopped.
+README for details; the stack must be stopped. The archive node's own databases (`peer.sqlite`, its
+peer list, and `event_observers.sqlite`, its pending event deliveries) are left out: the node creates
+new ones and finds its peers from the bootstrap node.
 
 ```bash
 docker compose --profile '*' down
@@ -125,6 +128,9 @@ docker compose run --rm seed --dry-run
 docker compose run --rm seed
 # with archives you already have, placed in SEED_DOWNLOAD_DIR:
 docker compose run --rm seed --chainstate <file>.tar.zst --pgdump <file>.dump
+# mainnet: build the slowest API index after the stack starts (see the README)
+docker compose run --rm seed --defer-index nft_events_asset_identifier_index
+docker compose logs -f build-indexes   # progress of deferred index builds once the stack runs
 ```
 
 ### Download BNS data

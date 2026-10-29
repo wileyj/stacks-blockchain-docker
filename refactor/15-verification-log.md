@@ -393,6 +393,69 @@ Findings:
 
 Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing dates and never crossing networks), download (hash while writing, resume after a dropped connection, resume a partial file from an earlier run, no refetch of a complete file, a 404 fails without retries), extraction (staging, swap keeps the dir itself, symlinks, ownership, 5 path-escape refusals), local-pair rules, rename SQL, exit codes.
 
+### Phase 3b reset job — Linux x64, 2026-10-28 [V]
+
+`docker compose run --rm -T reset …` in project `sbd-reset` (testnet), after a short run had left root- and uid 70-owned data.
+
+| Step | Result |
+|---|---|
+| Stack running | Refused, exit 1 ("refusing to reset while stacks-blockchain, stacks-blockchain-api, postgres are running") |
+| No TTY, no `--yes` | Listed `stacks-blockchain`, `postgres`, then refused, exit 2 |
+| `--yes` | Deleted; the dirs were kept (same inode for `postgres`, which inside the container is a bind-mount point); 0 entries left; **no sudo** |
+| Run again | "no testnet data to delete", exit 0 |
+
+`manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
+
+### Phase 3c mainnet seed, segmented downloads, native extraction — Linux x64, 2026-10-28 [V]
+
+Project `sbd-mainnet`, a repo copy on the 3 TB LV (`/stacks/temp/sbd-mainnet`, not the symlink), LAN BTC peer. Snapshot `20261027`: core 4.0.4, API 9.7.0, pg17 (the exact pins). Chainstate 261.4 GiB, dump 98.8 GiB.
+
+**Download throughput from `archive.hiro.so`** (20 s each, ranged GETs): 1 stream **44 MB/s**, 4 streams 113 MB/s, 8 → 105, 16 → 107 (the host's 1 Gbit/s link). `SEED_CONNECTIONS` defaults to 4.
+
+| Step | Run 1 (everything restored) | Run 2 (`--defer-index nft_events_asset_identifier_index`, local archives) |
+|---|---|---|
+| Download + hash (both files, 4 connections each) | **1 h 01 m** for 360 GiB (about 100–108 MiB/s combined); both `sha256 OK` | — (verified the kept files and their `.sha256` sidecars) |
+| Chainstate extraction (Go zstd + tar, in parallel with the restore) | 261 GiB in about 25 min; 215–270 MiB/s, falling to about 83 MiB/s while competing with the restore for the disk | about the same |
+| `pg_restore -j 8` | all but one index in about 2.5 h (the raw `event_observer_requests` table is a single-threaded `COPY` of about 2 h). Then `nft_events_asset_identifier_index` (hash) at **48.2% after 8 h 50 m**, single core, slowing; **stopped**, projected 18 h+ ([upstream-api-index-issue.md](./upstream-api-index-issue.md)) | **2 h 00 m 40 s** end to end, then swap |
+| Boot | — | **39 s** after `up`: node and API both at tip **9 331 754** (burn 973 432), API `ready`; postgres, API and node healthy with 0 restarts; `build-indexes` building the deferred index (CONCURRENTLY) |
+| API with the index still missing | — | `/extended/v1/block` 0.22 s. `/extended/v1/tokens/nft/mints?asset_identifier=…bitcoin-faces` **39 s**; a DLMM pool identifier **>60 s (timed out)**. The API **doesn't cancel the DB query when the client disconnects**: a test query was still running after 74 s and was cancelled by hand |
+
+An interrupted seed (run 1 stopped with `docker stop`) removed both staging dirs and left the data dirs as they were, and the archives and sidecars were intact. The temporary postgres didn't stop within `pg_ctl`'s 60 s (mid index build) and was killed, which is harmless because its staging dir is discarded.
+
+**Extraction benchmark** (the first 20 GiB of the mainnet chainstate, read from page cache, writing 52.3 GiB; during the mainnet restore):
+
+| Method | Time | Input rate |
+|---|---|---|
+| Host: `zstd -dc \| tar -x` (glibc, zstd 1.5.7, GNU tar 1.35) | 65.0 s / 65.5 s (55.7 s in an earlier batch) | about 314 MiB/s |
+| Container, Debian (glibc), same tools | **67.5 s** | 304 MiB/s, **within 4% of the host** |
+| Container, Alpine (musl), same tools | 109.1 s | 188 MiB/s, **about 40% slower** |
+| Go extractor (klauspost zstd + archive/tar), same batch as 55.7 s | 79.1 s | about 30% slower than native |
+
+So the container itself costs about nothing; the libc of the image matters a lot, and native tools beat the Go decoder. Following that, and the owner's preference for tools over code (archive formats change over time): **extraction is now GNU `tar -x -f`**, with tar picking zstd/xz/gzip itself and progress read from `/proc/<pid>/fdinfo`. The seed image first moved to the **Debian** `postgres:<ver>` base for the faster extraction; a testnet seed with it took 3 min 25 s (5 min 22 s before). **That was wrong and is reverted** (run 3 below): the seed image is again `postgres:<ver>-alpine`, the same image as the stack's postgres, with GNU `tar`, `zstd` and `xz` from apk.
+
+**Run 3 (2026-10-28/29): collation, node-local files, re-seed over existing data** [V]
+
+- **A Debian-built database breaks on the Alpine postgres.** The restore server builds every index, and text indexes follow the C library's collation for the database locale (`en_US.UTF-8`, set by the dump's `CREATE DATABASE … LOCALE_PROVIDER = libc`). glibc (Debian) and musl (Alpine) order text differently. With the Debian seed image:
+  - `bt_index_check('token_assets_pkey', true)`: **"item order invariant violated"** (a primary key). Indexes over hex/address values passed.
+  - The API crashed on ingestion: "table tid from new index tuple … overlaps with invalid duplicate tuple … in index `unique_address_token`", 5 restarts in 30 min. The node kept retrying `/new_block`, so the chain barely advanced.
+  - Every connection warned "database has no actual collation version, but a version was recorded", which `build-indexes` read as its query result ("nothing deferred"): it now reads stdout only.
+  - **Fix:** the seed image is built from the stack's postgres image. With it: amcheck passes on `token_assets_pkey`, `token_assets_asset_identifier_pattern_idx`, `names_namespace_id_index`, `unique_address_token`; no collation version recorded; API 0 errors, 0 restarts. musl's slower extraction costs nothing: it runs in parallel with the restore.
+  - The owner considered moving the whole stack to Debian instead and kept Alpine: existing installs have musl-built indexes, and glibc collation can change across image updates.
+- **Re-seeding over a data dir the stack has used failed** with the Debian image: `initdb: could not access directory "/data/postgres/.seed-staging": Permission denied` (the data dir is 0700, owned by the stack's postgres uid 70; the seed's postgres was 999). The seed now adds search permission to the data dir during the restore and restores the mode after. Run 2 hadn't hit this because its data dir was new.
+- **A failed restore no longer waits for the extraction:** the first failure cancels the other job (before, the run above kept extracting for minutes after initdb failed).
+- **Node-local files are no longer extracted.** The archive carries the archive node's `peer.sqlite` (its key and 800 stale neighbours, last contact from 2026-03-17) and `event_observers.sqlite` (its pending event deliveries). The seed passes `--exclude` for both to tar; the node creates them on boot (birth time = boot, chain files = extraction) with a new key, and had 27–36 outbound neighbours.
+  - The node regenerates its key anyway when none is configured (the archive's key and the running node's differed before this change), so the identity was never shared; the stale neighbour list was.
+  - **Not the cause of the burn-height stall.** With fresh files the node synced Bitcoin blocks to the tip (973 615) at boot, processed sortitions to 973 419 and then paced them while catching up on Stacks blocks: stacks-core behaviour. The earlier jump after a restart (973 432 → 973 578) came from the restart, not from the deleted files.
+  - **Don't delete `event_observers.sqlite` under a running node:** while testing, the node was still running (it is in the `node` profile, not `api`) when the file was removed. A block delivery was lost, the API (9 331 912) then refused every later block ("DB does not contain a parent block"), and the node blocked on it. The seed only touches a stopped stack.
+
+| Run 3 (Alpine seed image, local archives, deferred index) | Result |
+|---|---|
+| Seed | **2 h 01 m** (7264 s) |
+| Boot | node and API up **38 s** after `up`, tip 9 331 755; `build-indexes` building the deferred index (15.5% after 30 min) |
+| Catch-up | node at the network tip (9 357 347, burn 973 693) about 13 h later |
+| Deferred index | **19 h 25 m 39 s** with `CREATE INDEX CONCURRENTLY` while the stack ran; valid; `sbd_seed` schema dropped afterwards. Index comparison in [upstream-api-index-issue.md](./upstream-api-index-issue.md) |
+| First 30 min | Stacks tip +222 (9 331 755 → 9 331 976, faster later), API one block behind the node throughout, 0 restarts |
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |

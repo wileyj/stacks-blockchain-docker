@@ -252,10 +252,58 @@ services:
       - PG_SCHEMA
       - CONFIRM
       - SEED_RESTORE_JOBS
+      - SEED_CONNECTIONS
+      - SEED_PG_MAINTENANCE_MEM
+      - SEED_DEFER_INDEXES
     volumes:
       - ${STACKS_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-blockchain}:/data/stacks-blockchain
       - ${POSTGRES_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/postgres}:/data/postgres
       - ${SEED_DOWNLOAD_DIR:-${DATA_ROOT:-./persistent-data}/seed-downloads}:/downloads
+
+  ## Builds API indexes the seed deferred (--defer-index / SEED_DEFER_INDEXES) with CREATE INDEX
+  ## CONCURRENTLY while the API runs; exits at once when nothing is pending. Same image as seed.
+  build-indexes:
+    build:
+      context: .
+      dockerfile: tools/seed/Dockerfile
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-17}
+    image: stacks-blockchain-docker-seed:pg${POSTGRES_VERSION:-17}
+    pull_policy: build
+    restart: on-failure:5
+    profiles: [api]
+    entrypoint: ["/usr/local/bin/seed", "build-indexes"]
+    environment:
+      - PG_HOST
+      - PG_PORT
+      - PG_USER
+      - PG_PASSWORD
+      - PG_DATABASE
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ## Delete this network's data (chainstate, API database, signer) with the stack stopped:
+  ##   docker compose --profile '*' down && docker compose run --rm reset [--yes]
+  ## Same image as seed. Refuses while the stack runs; keeps the data dirs themselves (mount points).
+  reset:
+    build:
+      context: .
+      dockerfile: tools/seed/Dockerfile
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-17}
+    image: stacks-blockchain-docker-seed:pg${POSTGRES_VERSION:-17}
+    pull_policy: build
+    restart: "no"
+    profiles: [reset]
+    entrypoint: ["/usr/local/bin/seed", "reset"]
+    environment:
+      - NETWORK
+      - CONFIRM
+    volumes:
+      - ${STACKS_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-blockchain}:/data/stacks-blockchain
+      - ${POSTGRES_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/postgres}:/data/postgres
+      - ${SIGNER_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-signer}:/data/stacks-signer
 
   ## Legacy BNS v1 data for a genesis sync with BNS_IMPORT_DIR set: docker compose --profile bns up
   bns:

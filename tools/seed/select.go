@@ -41,7 +41,9 @@ type Selection struct {
 
 var (
 	chainRe = regexp.MustCompile(`([a-z]+)-stacks-blockchain-([0-9][0-9.]*)-([0-9]{8})\.tar\.zst`)
-	dumpRe  = regexp.MustCompile(`stacks-blockchain-api-pg-([0-9]+)-([0-9][0-9.]*)-([0-9]{8})\.dump`)
+	// Local chainstate archives may be recompressed (refactor/11 Q16)
+	localChainRe = regexp.MustCompile(`([a-z]+)-stacks-blockchain-([0-9][0-9.]*)-([0-9]{8})\.(?:tar\.zst|tar\.gz|tgz|tar\.xz|tar)$`)
+	dumpRe       = regexp.MustCompile(`stacks-blockchain-api-pg-([0-9]+)-([0-9][0-9.]*)-([0-9]{8})\.dump`)
 )
 
 // Select applies the Q24 rule to the archive listings: the newest date on which both a chainstate

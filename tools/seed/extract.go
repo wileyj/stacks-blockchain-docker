@@ -1,16 +1,16 @@
 package main
 
 import (
-	"archive/tar"
-	"errors"
+	"context"
 	"fmt"
-	"io"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/klauspost/compress/zstd"
+	"time"
 )
 
 // StagingName is where a component is rebuilt inside its own data dir, so the final swap is a
@@ -33,95 +33,105 @@ func OwnerOf(dir string) (Owner, error) {
 	return Owner{int(st.Uid), int(st.Gid)}, nil
 }
 
-// ExtractTarZst streams a .tar.zst archive into dest, which must exist and be empty.
-func ExtractTarZst(archive, dest string, owner Owner, p *Progress) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return err
+// ArchiveExts are the chainstate archive formats, by file extension: the Hiro archive publishes
+// .tar.zst; local archives may also be .tar.gz/.tgz, .tar.xz or plain .tar (refactor/11 Q16/Q21).
+var ArchiveExts = []string{".tar.zst", ".tar.gz", ".tgz", ".tar.xz", ".tar"}
+
+// ArchiveBase strips a chainstate archive or dump extension (for the .sha256 sidecar name).
+func ArchiveBase(name string) string {
+	for _, ext := range append(ArchiveExts, ".dump") {
+		if strings.HasSuffix(name, ext) {
+			return strings.TrimSuffix(name, ext)
+		}
 	}
-	defer f.Close()
-	zr, err := zstd.NewReader(io.TeeReader(f, counter{p}), zstd.WithDecoderMaxWindow(1<<31))
-	if err != nil {
-		return err
-	}
-	defer zr.Close()
-	return extractTar(tar.NewReader(zr), dest, owner)
+	return name
 }
 
-func extractTar(tr *tar.Reader, dest string, owner Owner) error {
-	root, err := filepath.Abs(dest)
-	if err != nil {
+// NodeLocalState are the archive node's own databases, not chain data (tar --exclude patterns, matched
+// at any depth). peer.sqlite holds its peer list, which kept a seeded mainnet node at a stale burn
+// height until removed; event_observers.sqlite holds its pending event deliveries. The node recreates
+// both on start (refactor/15 "Phase 3c").
+var NodeLocalState = []string{"peer.sqlite*", "event_observers.sqlite*"}
+
+// ExtractArchive extracts a chainstate archive into dest (existing, empty) with GNU tar, which picks
+// the decompressor from the file itself (zstd, xz, gzip or none): a new archive format needs a package
+// in the image, not code. The image is Alpine, like the stack's postgres (see the Dockerfile), so this
+// is about 40% slower than on glibc, but it runs in parallel with the longer restore (refactor/15
+// "Phase 3c"). GNU tar strips leading "/" and refuses ".." members
+// and writes through symlinks. Files get the data dir's owner instead of the archive's (uid 1001).
+// NodeLocalState is left out.
+func ExtractArchive(ctx context.Context, archive, dest string, owner Owner, p *Progress) error {
+	var stderr strings.Builder
+	args := []string{"-x", "-f", archive, "-C", dest, "--no-same-owner"}
+	for _, pat := range NodeLocalState {
+		args = append(args, "--exclude="+pat)
+	}
+	cmd := exec.CommandContext(ctx, "tar", args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
 		return err
 	}
+	done := make(chan struct{})
+	go trackReadPosition(done, archive, p)
+	err := cmd.Wait()
+	close(done)
+	if err != nil {
+		return fmt.Errorf("tar -x %s: %w: %s", filepath.Base(archive), err, strings.TrimSpace(stderr.String()))
+	}
+	p.Done.Store(p.Total)
+	return chownTree(dest, owner)
+}
+
+// trackReadPosition reports how far tar (or the decompressor it runs) has read into the archive, from
+// /proc/<pid>/fdinfo: progress without knowing the archive's format.
+func trackReadPosition(done <-chan struct{}, archive string, p *Progress) {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
 	for {
-		hdr, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return nil
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			if pos := readPosition(archive); pos > p.Done.Load() {
+				p.Done.Store(pos)
+			}
 		}
-		if err != nil {
-			return err
-		}
-		target, err := safeJoin(root, hdr.Name)
-		if err != nil {
-			return err
-		}
-		mode := os.FileMode(hdr.Mode).Perm()
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, mode|0o700); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			if err := out.Close(); err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			// The link target is stored as-is; only links that stay inside dest are allowed
-			if _, err := safeJoin(root, filepath.Join(filepath.Dir(hdr.Name), hdr.Linkname)); err != nil || filepath.IsAbs(hdr.Linkname) {
-				return fmt.Errorf("refusing symlink %s -> %s outside the archive root", hdr.Name, hdr.Linkname)
-			}
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
-				return err
-			}
-		case tar.TypeLink:
-			src, err := safeJoin(root, hdr.Linkname)
-			if err != nil {
-				return err
-			}
-			if err := os.Link(src, target); err != nil {
-				return err
-			}
-		default:
-			fmt.Fprintf(os.Stderr, "seed: skipping %s (tar type %q)\n", hdr.Name, hdr.Typeflag)
+	}
+}
+
+func readPosition(path string) int64 {
+	var best int64
+	fds, _ := filepath.Glob("/proc/[0-9]*/fd/*")
+	for _, fd := range fds {
+		if target, err := os.Readlink(fd); err != nil || target != path {
 			continue
 		}
-		if err := os.Lchown(target, owner.UID, owner.GID); err != nil {
-			return err
+		info, err := os.ReadFile(strings.Replace(fd, "/fd/", "/fdinfo/", 1))
+		if err != nil {
+			continue
 		}
-		if hdr.Typeflag != tar.TypeSymlink {
-			_ = os.Chtimes(target, hdr.ModTime, hdr.ModTime)
+		for _, line := range strings.Split(string(info), "\n") {
+			if v, ok := strings.CutPrefix(line, "pos:"); ok {
+				if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > best {
+					best = n
+				}
+			}
 		}
 	}
+	return best
 }
 
-// safeJoin resolves name under root and refuses anything that would land outside it.
-func safeJoin(root, name string) (string, error) {
-	p := filepath.Join(root, name) // Join cleans "..", so check the result is still under root
-	if p != root && !strings.HasPrefix(p, root+string(os.PathSeparator)) {
-		return "", fmt.Errorf("refusing archive entry %q outside the archive root", name)
+// chownTree gives everything under dir the owner of the data dir (tar as root leaves root:root).
+func chownTree(dir string, owner Owner) error {
+	if owner.UID == os.Geteuid() && owner.GID == os.Getegid() {
+		return nil
 	}
-	return p, nil
+	return filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Lchown(path, owner.UID, owner.GID)
+	})
 }
 
 // PrepareStaging returns an empty <dir>/.seed-staging, removing one left by an earlier failed run.

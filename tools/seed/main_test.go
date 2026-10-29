@@ -16,6 +16,8 @@ func TestLocalPairRules(t *testing.T) {
 		{"testnet-stacks-blockchain-4.0.1-20261015.tar.zst", "stacks-blockchain-api-pg-17-9.0.2-20261015.dump", "is a testnet archive"},
 		{"mainnet-stacks-blockchain-4.0.5-20261015.tar.zst", "stacks-blockchain-api-pg-17-9.7.0-20261015.dump", "not compatible"},
 		{"chain.tar.zst", "dump.dump", "must keep their archive names"},
+		{"mainnet-stacks-blockchain-4.0.4-20261015.tar.xz", "stacks-blockchain-api-pg-17-9.6.0-20261015.dump", "not found in the download dir"},
+		{"mainnet-stacks-blockchain-4.0.4-20261015.tar.rar", "stacks-blockchain-api-pg-17-9.6.0-20261015.dump", "must keep their archive names"},
 	} {
 		_, _, err := localPair("mainnet", pins, options{chainFile: tc.chain, dumpFile: tc.dump})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -58,11 +60,11 @@ func TestConfirmWithoutTTYRefuses(t *testing.T) {
 	old := os.Stdin
 	os.Stdin = r
 	defer func() { os.Stdin = old }()
-	err := confirm(false, "mainnet")
+	err := confirm(false, "replace the mainnet data")
 	if ee, ok := err.(exitError); !ok || ee.code != 2 || !strings.Contains(ee.msg, "--yes") {
 		t.Errorf("no TTY and no --yes must refuse with exit 2 naming --yes, got %v", err)
 	}
-	if err := confirm(true, "mainnet"); err != nil {
+	if err := confirm(true, "replace the mainnet data"); err != nil {
 		t.Errorf("--yes must not prompt: %v", err)
 	}
 }

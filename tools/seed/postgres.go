@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -15,10 +17,11 @@ import (
 type PG struct {
 	User, Password, Database, Schema string
 	Jobs                             int
+	MaintenanceMem                   string   // per index build; up to Jobs builds run at once
+	Defer                            []string // indexes built after the stack starts (build-indexes job)
 }
 
 const (
-	pgUID      = 70 // the postgres user in the postgres:*-alpine image this job is built from
 	pgSocket   = "/tmp/seed-pg"
 	dumpSchema = "stacks_blockchain_api" // database and schema name inside the Hiro dumps
 )
@@ -28,18 +31,33 @@ const (
 // then the database/schema renames the API expects (same as the old seed-chainstate.sh). The server
 // is stopped cleanly and the data flushed before returning.
 func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
-	if err := os.Chown(pgdata, pgUID, pgUID); err != nil {
+	// The image's postgres user (70 in the Alpine images): whatever this image has
+	u, err := user.Lookup("postgres")
+	if err != nil {
+		return fmt.Errorf("no postgres user in the image: %w", err)
+	}
+	pgUID, _ := strconv.Atoi(u.Uid)
+	pgGID, _ := strconv.Atoi(u.Gid)
+	if err := os.Chown(pgdata, pgUID, pgGID); err != nil {
 		return err
 	}
 	if err := os.Chmod(pgdata, 0o700); err != nil {
 		return err
 	}
+	// The staging dir sits inside the postgres data dir, which a previous stack left 0700 and owned by
+	// the stack's postgres user: this image's postgres user must be able to pass through it (they are
+	// the same user unless the images differ). The original mode comes back afterwards (and the stack's entrypoint resets it to 0700)
+	restoreMode, err := allowTraverse(filepath.Dir(pgdata))
+	if err != nil {
+		return err
+	}
+	defer restoreMode()
 	pwfile := filepath.Join(os.TempDir(), "seed-pg-pw")
 	if err := os.WriteFile(pwfile, []byte(pg.Password+"\n"), 0o600); err != nil {
 		return err
 	}
 	defer os.Remove(pwfile)
-	if err := os.Chown(pwfile, pgUID, pgUID); err != nil {
+	if err := os.Chown(pwfile, pgUID, pgGID); err != nil {
 		return err
 	}
 	if err := run(ctx, "gosu", "postgres", "initdb", "-D", pgdata, "--username="+pg.User, "--pwfile="+pwfile, "--auth-local=trust", "--auth-host=scram-sha-256"); err != nil {
@@ -59,7 +77,7 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 	if err := os.MkdirAll(pgSocket, 0o775); err != nil {
 		return err
 	}
-	if err := os.Chown(pgSocket, pgUID, pgUID); err != nil {
+	if err := os.Chown(pgSocket, pgUID, pgGID); err != nil {
 		return err
 	}
 	// Bulk-load settings: safe because a failed restore's staging dir is thrown away, and the data
@@ -67,7 +85,9 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 	server := exec.CommandContext(ctx, "gosu", "postgres", "postgres", "-D", pgdata,
 		"-c", "listen_addresses=", "-c", "unix_socket_directories="+pgSocket,
 		"-c", "fsync=off", "-c", "full_page_writes=off", "-c", "synchronous_commit=off",
-		"-c", "max_wal_size=16GB", "-c", "maintenance_work_mem=1GB", "-c", "autovacuum=off")
+		"-c", "max_wal_size=16GB", "-c", "maintenance_work_mem="+pg.MaintenanceMem, "-c", "autovacuum=off",
+		// One large index (nft_events) took hours on a single core on mainnet: let each build use workers
+		"-c", "max_worker_processes=16", "-c", "max_parallel_workers=16", "-c", "max_parallel_maintenance_workers=4")
 	server.Stdout, server.Stderr = os.Stdout, os.Stderr
 	if err := server.Start(); err != nil {
 		return err
@@ -91,9 +111,23 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 		return err
 	}
 
+	restoreArgs := []string{"-h", pgSocket, "-U", pg.User, "--no-owner", "--no-privileges",
+		"--create", "--dbname=postgres", fmt.Sprintf("--jobs=%d", pg.Jobs)}
+	var deferredNames, deferredDefs []string
+	if len(pg.Defer) > 0 {
+		list, names, defs, err := deferIndexes(ctx, dump, pgdata, pg)
+		if err != nil {
+			return err
+		}
+		restoreArgs = append(restoreArgs, "--use-list="+list)
+		deferredNames, deferredDefs = names, defs
+		fmt.Printf("seed: deferring %s until the stack runs (build-indexes job)\n", strings.Join(names, ", "))
+	}
 	fmt.Printf("seed: pg_restore -j %d (this takes a long time for mainnet)\n", pg.Jobs)
-	if err := run(ctx, "pg_restore", "-h", pgSocket, "-U", pg.User, "--no-owner", "--no-privileges",
-		"--create", "--dbname=postgres", fmt.Sprintf("--jobs=%d", pg.Jobs), dump); err != nil {
+	stopReport := make(chan struct{})
+	go reportRestore(stopReport, pg.User, time.Minute)
+	defer close(stopReport)
+	if err := run(ctx, "pg_restore", append(restoreArgs, dump)...); err != nil {
 		return fmt.Errorf("pg_restore: %w", err)
 	}
 	for _, sql := range renameSQL(pg) {
@@ -101,7 +135,49 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 			return fmt.Errorf("%s: %w", sql[1], err)
 		}
 	}
+	if len(deferredNames) > 0 {
+		if err := run(ctx, "psql", "-h", pgSocket, "-U", pg.User, "-v", "ON_ERROR_STOP=1", "-d", pg.Database, "-c", recordDeferredSQL(deferredNames, deferredDefs)); err != nil {
+			return fmt.Errorf("recording the deferred indexes: %w", err)
+		}
+	}
 	return stop()
+}
+
+// deferIndexes writes a restore list without the deferred indexes (into the staging dir, which is
+// discarded on failure and cleaned on success) and returns the deferred names and definitions.
+func deferIndexes(ctx context.Context, dump, pgdata string, pg PG) (list string, names, defs []string, err error) {
+	toc, err := exec.CommandContext(ctx, "pg_restore", "-l", dump).Output()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("pg_restore -l: %w", err)
+	}
+	kept, removed, err := FilterTOC(string(toc), pg.Defer)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	dir, err := os.MkdirTemp("", "seed-toc")
+	if err != nil {
+		return "", nil, nil, err
+	}
+	list = filepath.Join(dir, "restore.list")
+	only := filepath.Join(dir, "deferred.list")
+	if err := os.WriteFile(list, []byte(kept), 0o644); err != nil {
+		return "", nil, nil, err
+	}
+	if err := os.WriteFile(only, []byte(strings.Join(removed, "\n")+"\n"), 0o644); err != nil {
+		return "", nil, nil, err
+	}
+	sql, err := exec.CommandContext(ctx, "pg_restore", "--use-list="+only, "-f", "-", dump).Output()
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("reading the deferred index definitions: %w", err)
+	}
+	defs = IndexDefinitions(string(sql), pg.Schema)
+	for _, line := range removed {
+		names = append(names, tocIndexRe.FindStringSubmatch(line)[2])
+	}
+	if len(defs) != len(names) {
+		return "", nil, nil, fmt.Errorf("found %d definitions for %d deferred indexes", len(defs), len(names))
+	}
+	return list, names, defs, nil
 }
 
 // renameSQL returns (database, statement) pairs that move the restored stacks_blockchain_api
@@ -121,7 +197,47 @@ func renameSQL(pg PG) [][2]string {
 	return out
 }
 
+// allowTraverse adds search (x) permission for everyone to dir and returns a func that restores its
+// mode. Nothing becomes listable or readable.
+func allowTraverse(dir string) (restore func(), err error) {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	mode := fi.Mode().Perm()
+	if mode&0o001 != 0 {
+		return func() {}, nil
+	}
+	if err := os.Chmod(dir, mode|0o001); err != nil {
+		return nil, err
+	}
+	return func() { os.Chmod(dir, mode) }, nil
+}
+
 func quoteIdent(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
+
+// reportRestore prints the restored database's size and pg_restore's current steps until stop closes.
+func reportRestore(stop <-chan struct{}, user string, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	start := time.Now()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			out, err := exec.Command("psql", "-h", pgSocket, "-U", user, "-d", "postgres", "-Atc",
+				"select pg_size_pretty(coalesce(pg_database_size('"+dumpSchema+"'),0)), "+
+					"coalesce(string_agg(DISTINCT substring(query from '^(COPY \\S+|CREATE (?:UNIQUE )?INDEX \\S+)'), ', '), '') "+
+					"from pg_stat_activity where application_name = 'pg_restore' and state = 'active'").Output()
+			if err != nil {
+				continue
+			}
+			size, steps, _ := strings.Cut(strings.TrimSpace(string(out)), "|")
+			fmt.Printf("seed:   restore %s: database %s; running: %s\n", time.Since(start).Truncate(time.Second), size, steps)
+		}
+	}
+}
 
 func waitReady(ctx context.Context, user string) error {
 	deadline := time.Now().Add(2 * time.Minute)

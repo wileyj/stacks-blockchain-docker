@@ -77,11 +77,20 @@ docker compose run --rm seed                      # asks before replacing data; 
 docker compose up -d                              # or: ./manage.sh -n mainnet -a start
 ```
 
-The seed runs in a container (no sudo, curl or zstd needed on the host): it downloads the chainstate
-and API dump of the same date in parallel, verifies them while downloading, resumes interrupted
-downloads, and only replaces the existing data once both are restored. Archives you already have go
-in `SEED_DOWNLOAD_DIR` (default `./persistent-data/seed-downloads`): `docker compose run --rm seed
---chainstate <file> --pgdump <file>`. The older `sudo ./scripts/seed-chainstate.sh` still works.
+The seed runs in a container (no sudo, curl, zstd or aria2 needed on the host): it downloads the
+chainstate and API dump of the same date in parallel (`SEED_CONNECTIONS` ranged connections per file,
+default 4), verifies them while downloading, resumes interrupted downloads, and only replaces the
+existing data once both are restored. Archives you already have go in `SEED_DOWNLOAD_DIR` (default
+`./persistent-data/seed-downloads`): `docker compose run --rm seed --chainstate <file> --pgdump <file>`
+(chainstate as `.tar.zst`, `.tar.gz`, `.tar.xz` or `.tar`, keeping the archive's file name). The older
+`sudo ./scripts/seed-chainstate.sh` still works.
+
+**Mainnet:** one API index (`nft_events_asset_identifier_index`, a hash index over very skewed data)
+takes 18 hours or more to rebuild, and the node stays down until the restore finishes. Defer it with
+`SEED_DEFER_INDEXES=nft_events_asset_identifier_index` in `.env` (or `--defer-index <name>`): the
+stack starts as soon as everything else is restored, and the `build-indexes` job builds the index in
+the background (`CREATE INDEX CONCURRENTLY`) while the API runs. Until it finishes, API queries that
+filter NFT events by asset identifier are slow.
 
 - [Requirements](./docs/requirements.md)
 - [Docker Setup](./docs/docker.md)

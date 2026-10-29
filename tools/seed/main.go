@@ -48,8 +48,19 @@ func refuse(format string, a ...any) error { return exitError{2, fmt.Sprintf(for
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := runSeed(ctx, os.Args[1:], os.Getenv); err != nil {
-		fmt.Fprintf(os.Stderr, "seed: %v\n", err)
+	cmd, run := "seed", runSeed
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reset":
+			cmd, run = "reset", runReset
+			os.Args = os.Args[1:]
+		case "build-indexes":
+			cmd, run = "build-indexes", runBuildIndexes
+			os.Args = os.Args[1:]
+		}
+	}
+	if err := run(ctx, os.Args[1:], os.Getenv); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", cmd, err)
 		var ee exitError
 		if errors.As(err, &ee) {
 			os.Exit(ee.code)
@@ -61,7 +72,14 @@ func main() {
 type options struct {
 	yes, dryRun, keep   bool
 	chainFile, dumpFile string
+	deferIdx            listFlag
 }
+
+// listFlag is a repeatable string flag.
+type listFlag []string
+
+func (l *listFlag) String() string     { return strings.Join(*l, ",") }
+func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
 
 func runSeed(ctx context.Context, args []string, getenv func(string) string) error {
 	var o options
@@ -71,6 +89,7 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 	fs.BoolVar(&o.keep, "keep-downloads", false, "keep the archives this run downloaded")
 	fs.StringVar(&o.chainFile, "chainstate", "", "local chainstate archive in the download dir (with --pgdump)")
 	fs.StringVar(&o.dumpFile, "pgdump", "", "local API dump in the download dir (with --chainstate)")
+	fs.Var(&o.deferIdx, "defer-index", "build this API index after the stack starts instead of during the restore (repeatable; SEED_DEFER_INDEXES=a,b)")
 	if err := fs.Parse(args); err != nil {
 		return exitError{2, err.Error()}
 	}
@@ -96,15 +115,25 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 		jobs = min(runtime.NumCPU(), 8)
 	}
 	pg := PG{User: orDefault(getenv("PG_USER"), "postgres"), Password: orDefault(getenv("PG_PASSWORD"), "postgres"),
-		Database: orDefault(getenv("PG_DATABASE"), "postgres"), Schema: orDefault(getenv("PG_SCHEMA"), "public"), Jobs: jobs}
+		Database: orDefault(getenv("PG_DATABASE"), "postgres"), Schema: orDefault(getenv("PG_SCHEMA"), "public"), Jobs: jobs,
+		MaintenanceMem: orDefault(getenv("SEED_PG_MAINTENANCE_MEM"), "1GB"), Defer: o.deferIdx}
+	for _, n := range strings.Split(getenv("SEED_DEFER_INDEXES"), ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			pg.Defer = append(pg.Defer, n)
+		}
+	}
 	archiveURL := strings.TrimRight(orDefault(getenv("ARCHIVE_URL"), "https://archive.hiro.so"), "/")
 
 	fmt.Printf("seed: %s, pinned core %s / API %s / pg%d\n", network, pins.Core, pins.API, pins.PG)
-	if err := guardNotRunning(); err != nil {
+	if err := guardNotRunning("seed"); err != nil {
 		return err
 	}
 
-	d := &Downloader{Client: &http.Client{Timeout: 0}, Attempts: 10, Backoff: 5 * time.Second}
+	conns, _ := strconv.Atoi(getenv("SEED_CONNECTIONS"))
+	if conns <= 0 {
+		conns = 4 // saturates a 1 Gbit/s link from the archive; one stream gets about 44 MB/s
+	}
+	d := &Downloader{Client: &http.Client{Timeout: 0}, Attempts: 10, Backoff: 5 * time.Second, Connections: conns}
 	var chain, dump fileJob
 	if o.chainFile != "" {
 		if chain, dump, err = localPair(network, pins, o); err != nil {
@@ -121,12 +150,12 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 		fmt.Println("seed: dry run, nothing was changed")
 		return nil
 	}
-	if err := confirm(o.yes, network); err != nil {
+	if err := confirm(o.yes, fmt.Sprintf("replace the %s chainstate and API database", network)); err != nil {
 		return err
 	}
 
 	// 1. Get and verify both files (in parallel)
-	if err := both(func() error { return chain.obtain(ctx, d) }, func() error { return dump.obtain(ctx, d) }); err != nil {
+	if err := both(ctx, func(ctx context.Context) error { return chain.obtain(ctx, d) }, func(ctx context.Context) error { return dump.obtain(ctx, d) }); err != nil {
 		return fmt.Errorf("%w (no data was changed)", err)
 	}
 
@@ -150,9 +179,11 @@ func runSeed(ctx context.Context, args []string, getenv func(string) string) err
 	extractP := &Progress{Name: "extract " + filepath.Base(chain.path), Total: chain.size}
 	done := make(chan struct{})
 	go Report(done, 30*time.Second, extractP)
-	err = both(
-		func() error { return ExtractTarZst(chain.path, chainStaging, chainOwner, extractP) },
-		func() error { return RestoreDump(ctx, dump.path, pgStaging, pg) },
+	err = both(ctx,
+		func(ctx context.Context) error {
+			return ExtractArchive(ctx, chain.path, chainStaging, chainOwner, extractP)
+		},
+		func(ctx context.Context) error { return RestoreDump(ctx, dump.path, pgStaging, pg) },
 	)
 	close(done)
 	if err != nil {
@@ -225,10 +256,8 @@ func (f *fileJob) obtain(ctx context.Context, d *Downloader) error {
 	return nil
 }
 
-// sumPath is <archive without .tar.zst/.dump>.sha256, the archive's own naming.
-func (f *fileJob) sumPath() string {
-	return strings.TrimSuffix(strings.TrimSuffix(f.path, ".tar.zst"), ".dump") + ".sha256"
-}
+// sumPath is <archive without its extension>.sha256, the archive's own naming.
+func (f *fileJob) sumPath() string { return ArchiveBase(f.path) + ".sha256" }
 
 func remotePair(ctx context.Context, d *Downloader, base, network string, pins Pins) (fileJob, fileJob, error) {
 	chainList, err := get(ctx, d, fmt.Sprintf("%s/%s/stacks-blockchain/", base, network))
@@ -253,9 +282,13 @@ func remotePair(ctx context.Context, d *Downloader, base, network string, pins P
 	mk := func(component, name, ext string) (fileJob, error) {
 		url := fmt.Sprintf("%s/%s/%s/%s", base, network, component, name)
 		sumURL := strings.TrimSuffix(url, ext) + ".sha256"
-		size, err := d.RemoteSize(ctx, url)
+		size, ranges, err := d.RemoteSize(ctx, url)
 		if err != nil {
 			return fileJob{}, err
+		}
+		if !ranges && d.Connections > 1 {
+			fmt.Printf("seed: %s: the server doesn't support Range requests: one stream, no resume\n", name)
+			d.Connections = 1
 		}
 		sum, err := d.Checksum(ctx, sumURL)
 		if err != nil {
@@ -273,10 +306,10 @@ func remotePair(ctx context.Context, d *Downloader, base, network string, pins P
 
 // localPair checks user-provided archives with the same rules: versions and date from the file names.
 func localPair(network string, pins Pins, o options) (fileJob, fileJob, error) {
-	cm := chainRe.FindStringSubmatch(o.chainFile)
+	cm := localChainRe.FindStringSubmatch(o.chainFile)
 	dm := dumpRe.FindStringSubmatch(o.dumpFile)
 	if cm == nil || dm == nil || cm[0] != filepath.Base(o.chainFile) || dm[0] != filepath.Base(o.dumpFile) {
-		return fileJob{}, fileJob{}, refuse("local archives must keep their archive names (<net>-stacks-blockchain-<ver>-<date>.tar.zst, stacks-blockchain-api-pg-<pg>-<ver>-<date>.dump) so their versions can be checked")
+		return fileJob{}, fileJob{}, refuse("local archives must keep their archive names (<net>-stacks-blockchain-<ver>-<date>.tar[.zst|.gz|.xz], stacks-blockchain-api-pg-<pg>-<ver>-<date>.dump) so their versions can be checked")
 	}
 	pgv, _ := strconv.Atoi(dm[1])
 	s := Snapshot{Date: cm[3], Core: cm[2], API: dm[2], PG: pgv}
@@ -313,7 +346,7 @@ func localPair(network string, pins Pins, o options) (fileJob, fileJob, error) {
 
 // guardNotRunning refuses while any stack service is up: their names resolve on the compose network
 // only while their containers run (refactor/14 R5: the guard lives in the job, not in a CLI).
-func guardNotRunning() error {
+func guardNotRunning(job string) error {
 	var up []string
 	for _, svc := range []string{"stacks-blockchain", "stacks-blockchain-api", "postgres", "stacks-signer"} {
 		if addrs, err := net.LookupHost(svc); err == nil && len(addrs) > 0 {
@@ -325,7 +358,7 @@ func guardNotRunning() error {
 		if len(up) == 1 {
 			verb = "is"
 		}
-		return exitError{1, fmt.Sprintf("refusing to seed while %s %s running. Stop the stack first: docker compose --profile '*' down", strings.Join(up, ", "), verb)}
+		return exitError{1, fmt.Sprintf("refusing to %s while %s %s running. Stop the stack first: docker compose --profile '*' down", job, strings.Join(up, ", "), verb)}
 	}
 	if _, err := os.Stat(filepath.Join(pgDir, "postmaster.pid")); err == nil {
 		fmt.Println("seed: WARNING: postgres left a postmaster.pid (unclean shutdown); continuing because postgres isn't running")
@@ -347,14 +380,15 @@ func printPlan(chain, dump fileJob) {
 	fmt.Println("seed:   (built in a staging dir first; the old data stays until both are ready)")
 }
 
-func confirm(yes bool, network string) error {
+// confirm asks before a destructive step; without a TTY it needs --yes / CONFIRM=yes (Q12, exit 2).
+func confirm(yes bool, action string) error {
 	if yes {
 		return nil
 	}
 	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return refuse("not running interactively: re-run with --yes (or CONFIRM=yes) to replace the %s data", network)
+		return refuse("not running interactively: re-run with --yes (or CONFIRM=yes) to %s", action)
 	}
-	fmt.Printf("seed: replace the %s chainstate and API database? [y/N] ", network)
+	fmt.Printf("%s? [y/N] ", strings.ToUpper(action[:1])+action[1:])
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 		return refuse("aborted, nothing was changed")
@@ -362,15 +396,23 @@ func confirm(yes bool, network string) error {
 	return nil
 }
 
-func both(a, b func() error) error {
+// both runs a and b in parallel. The first failure cancels the other (no point extracting for hours
+// after the restore failed) and is the error returned.
+func both(ctx context.Context, a, b func(context.Context) error) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for i, f := range []func() error{a, b} {
+	for _, f := range []func(context.Context) error{a, b} {
 		wg.Add(1)
-		go func() { defer wg.Done(); errs[i] = f() }()
+		go func() {
+			defer wg.Done()
+			if err := f(ctx); err != nil {
+				cancel(err)
+			}
+		}()
 	}
 	wg.Wait()
-	return errors.Join(errs...)
+	return context.Cause(ctx)
 }
 
 func get(ctx context.Context, d *Downloader, url string) (string, error) {

@@ -4,11 +4,9 @@
 --- stdin: y
 --- exit code: 0
 --- output (first 30 lines):
-Data to delete for mainnet: 
-    <REPO>/persistent-data/mainnet/postgres 
 
-[ Success ]      Persistent data deleted
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile reset run --rm reset
 --- filesystem side effects:
