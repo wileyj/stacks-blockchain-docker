@@ -216,7 +216,7 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 ## Upstream tracking: API index rebuild (2026-10-28)
 
-[upstream-api-index-issue.md](./upstream-api-index-issue.md) tracks the 18 h+ rebuild of the API's hash index `nft_events_asset_identifier_index` on mainnet: evidence, suspected cause and the proposed fix (a partial B-tree index), plus a verification checklist. **Tracking only; nothing filed upstream yet.** Locally it's mitigated by the seed's `--defer-index` + `build-indexes` job.
+[upstream-api-index-issue.md](./upstream-api-index-issue.md) tracks the rebuild of the API's hash index `nft_events_asset_identifier_index` on mainnet (**19 h 25 m**, measured): evidence, `pgstathashindex` structure, and a comparison of index options on the same data (a partial B-tree builds in 33 s and queries as fast; `COUNT(*) OVER()`, not the index, makes hot identifiers slow), plus the remaining checklist. **Tracking only; nothing filed upstream yet.** Locally it's mitigated by the seed's `--defer-index` + `build-indexes` job.
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

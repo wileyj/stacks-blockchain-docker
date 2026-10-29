@@ -8,7 +8,7 @@ document collects the evidence and a proposed mitigation to take upstream later.
 
 ## Summary
 
-Restoring the Hiro archive's mainnet API dump spends **18 hours or more on a single index**,
+Restoring the Hiro archive's mainnet API dump spends **more than 19 hours on a single index**,
 `nft_events_asset_identifier_index`. It is a **hash** index over a column whose values are extremely
 skewed in current mainnet data. A logical restore (`pg_restore`) rebuilds every index, so anyone
 seeding an API from the archive hits this, with or without this repo's tooling. While the restore
@@ -57,6 +57,7 @@ nft.block_height DESC, txs.microblock_sequence DESC, txs.tx_index DESC, nft.even
 | Build progress | Table scan finished quickly (`blocks_done = blocks_total`). Then 7.0 M of 30.0 M tuples after about 2 h 25 m, and **48.2% after 8 h 50 m**. The rate fell from about 800 to about 300 tuples/s at times (it varies with the values being inserted) |
 | Resources during the build | **One CPU core at 100%**; no significant I/O wait. Other `pg_restore` work had finished |
 | Projection | **18 h or more** for this index alone; the run was stopped at 48% |
+| **Measured, full build** (deferred, `CREATE INDEX CONCURRENTLY` on the running stack, 2026-10-29) | **19 h 25 m 39 s** (00:23:35 → 19:49:14 UTC); index valid, **2.1 GB** |
 
 For comparison, everything else in the same dump (all other tables and indexes) restored in about
 2.5 h with `-j 8`. The slowest other step was the single-threaded `COPY` of `event_observer_requests`.
@@ -64,13 +65,23 @@ For comparison, everything else in the same dump (all other tables and indexes) 
 The skewed values are canonical on-chain data (DLMM liquidity-pool position NFTs and similar), so the
 data itself is correct. The problem is the index type chosen for it.
 
-## Why it is slow [inferred, not yet proven]
+## Why it is slow [measured structure, inferred mechanism]
 
 A PostgreSQL hash index maps each distinct value to one bucket. With three values holding about 21 M
 of the 30 M rows, those buckets grow very long **overflow page chains**, and inserting a tuple
 appears to walk its bucket's chain. The build then degrades towards quadratic behaviour and is
 bound by a single core. This matches the observations: CPU-bound, no I/O wait, and a rate that drops
-as the chains grow. It has not been confirmed with `pageinspect` / `pgstathashindex`.
+as the chains grow.
+
+`pgstathashindex('nft_events_asset_identifier_index')` on the built index:
+
+| bucket pages | overflow pages | live items | free space |
+|---|---|---|---|
+| 196 608 | **73 582** | 30 214 205 | **72.6%** |
+
+So about 196 k buckets for fewer than 1 000 distinct values: nearly all buckets are empty (72.6% free
+space overall), while a few carry chains totalling 73.6 k overflow pages. The index is **2.1 GB**,
+against 226 MB for a B-tree over the same rows.
 
 The same structure probably also slows ordinary inserts for those identifiers during normal API
 ingestion (each new mint for a hot identifier extends a long chain). **Not measured.**
@@ -87,6 +98,28 @@ From the mainnet stack running on the seed with the index deferred (2026-10-28):
 
 **The API doesn't cancel its database query when the HTTP client disconnects.** The timed-out request's query was still running 74 s later. Repeated calls can therefore pile up full scans. This is a separate, smaller upstream point: tie the query to the request's lifetime or set a `statement_timeout`. The query also computes `COUNT(*) OVER()` over every matching row, which is expensive for hot identifiers even with an index.
 
+## Index options compared [measured]
+
+On the same mainnet database (2026-10-29), with the `getNftMints` query exactly as API 9.7.0 sends it
+(`nft.*`, `COUNT(*) OVER()`, join to `txs`, `ORDER BY … LIMIT 5`). Each option ran twice in a
+transaction with the other indexes dropped (then rolled back); the second run is shown. The stack was
+running, so the cache state varies between rows: compare orders of magnitude, not single seconds.
+
+| Index used by the plan | Build | Size | `bitcoin-faces` (792 k mints) | DLMM `usdcx-v-1` (7.78 M mints) |
+|---|---|---|---|---|
+| hash `(asset_identifier)` partial (as shipped) | **19 h 25 m** | 2.1 GB | 2.1 s | 45.4 s |
+| none: existing B-tree `(asset_identifier, value, …)` (`nft_events_asset_value_position_index`) | — | — | 1.8 s | 22.3 s |
+| B-tree `(asset_identifier)` partial | **33 s** | 226 MB | 2.0 s | 42.0 s |
+| B-tree `(asset_identifier, block_height DESC)` partial | **38 s** | 274 MB | 1.5 s | 30.9 s |
+
+- **The hash index doesn't make `getNftMints` faster** than the existing B-tree, and a B-tree
+  replacement builds in about 35 s instead of 19 h.
+- **No index makes hot identifiers fast**: `COUNT(*) OVER()` (the `total` in the response) forces the
+  query to read and join every matching row (7.78 M joins to `txs` for the DLMM identifier) before
+  `LIMIT 5`. Even the index in `ORDER BY` order can't stop early. That is a query change (a separate
+  or capped count), not an index change.
+- Earlier, with the index missing and a cold cache, the same requests took 39 s and > 60 s (above).
+
 ## Impact
 
 - **Seeding/restoring the API from the archive takes about a day longer** than it otherwise would,
@@ -97,7 +130,8 @@ From the mainnet stack running on the seed with the index deferred (2026-10-28):
 
 ## Proposed mitigation (upstream)
 
-1. **Replace the hash index with a partial B-tree index** on the same column and predicate:
+1. **Replace the hash index with a partial B-tree index** on the same column and predicate (measured:
+   33 s to build, 226 MB, same query speed):
 
    ```sql
    CREATE INDEX nft_events_asset_identifier_mint_index ON nft_events (asset_identifier)
@@ -105,15 +139,16 @@ From the mainnet stack running on the seed with the index deferred (2026-10-28):
    ```
 
    - **Why it helps:** B-tree indexes (PostgreSQL ≥ 13) **deduplicate** repeated keys and build by
-     sorting, so a skewed column costs about the same as any other. The build should take minutes,
-     not hours (to be measured on the same data, see below).
+     sorting, so a skewed column costs about the same as any other.
    - **Possibly better:** match the query's `ORDER BY` so `getNftMints` can read in index order, e.g.
      `(asset_identifier, block_height DESC) WHERE asset_event_type_id = 2`.
    - **As a migration:** create the B-tree index `CONCURRENTLY`, then drop the hash index.
-2. **Alternatively drop it**, if the existing B-tree index on `(asset_identifier, value)` already
-   serves `getNftMints` acceptably. It has the same leading column, so the mint filter would be
-   applied afterwards. Needs `EXPLAIN ANALYZE` evidence on mainnet data.
-3. **For the archive (independent of the index):** also publish a **physical** backup (a tarball of
+2. **Or drop it.** The existing B-tree `nft_events_asset_value_position_index` (leading column
+   `asset_identifier`) served `getNftMints` as fast as the hash index in the comparison above.
+3. **For hot identifiers, change the count:** `COUNT(*) OVER()` costs a full read and join of every
+   mint of the identifier on every page request. A separate (cacheable or capped) count would let the
+   `(asset_identifier, block_height DESC)` index stop after `LIMIT` rows.
+4. **For the archive (independent of the index):** also publish a **physical** backup (a tarball of
    the data directory, like the chainstate archive) next to the logical dump. Restoring would then be
    extraction only, with no index rebuilds, at the cost of requiring the exact Postgres major
    version.
@@ -130,12 +165,13 @@ From the mainnet stack running on the seed with the index deferred (2026-10-28):
 
 ## To verify before filing upstream
 
-- [ ] Build time of the proposed partial B-tree index on the same mainnet data (expected: minutes).
-- [ ] `EXPLAIN ANALYZE` of `getNftMints` for a hot identifier with: the hash index; the proposed
-      B-tree index; neither (only `(asset_identifier, value)`).
-- [ ] Confirm the overflow-chain cause with `pgstathashindex()` / `pageinspect` on the hash index.
+- [x] Build time of the proposed partial B-tree index on the same mainnet data: **33 s** (38 s with `block_height DESC`).
+- [x] `EXPLAIN ANALYZE` of `getNftMints` for hot identifiers with the hash index, the B-tree options and
+      neither: no meaningful difference; `COUNT(*) OVER()` dominates.
+- [x] Overflow chains: `pgstathashindex()` shows 73.6 k overflow pages and 72.6% free space (the
+      per-insert chain walk is still inferred, not traced).
 - [ ] Measure insert cost into `nft_events` for a hot identifier with and without the hash index.
-- [ ] Final build time of the hash index from the deferred build (mainnet run in progress).
+- [x] Final build time of the hash index from the deferred build: **19 h 25 m 39 s**.
 - [ ] Check whether newer API releases already changed this index.
 
 ## Related observation (separate topic)

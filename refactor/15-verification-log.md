@@ -452,6 +452,8 @@ So the container itself costs about nothing; the libc of the image matters a lot
 |---|---|
 | Seed | **2 h 01 m** (7264 s) |
 | Boot | node and API up **38 s** after `up`, tip 9 331 755; `build-indexes` building the deferred index (15.5% after 30 min) |
+| Catch-up | node at the network tip (9 357 347, burn 973 693) about 13 h later |
+| Deferred index | **19 h 25 m 39 s** with `CREATE INDEX CONCURRENTLY` while the stack ran; valid; `sbd_seed` schema dropped afterwards. Index comparison in [upstream-api-index-issue.md](./upstream-api-index-issue.md) |
 | First 30 min | Stacks tip +222 (9 331 755 → 9 331 976, faster later), API one block behind the node throughout, 0 restarts |
 
 ## Deferred, with reasons
