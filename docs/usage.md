@@ -34,8 +34,17 @@ choosing the network and the services. Two optional helpers sit on top and run t
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
 when there is none, and refuses `seed`, `reset` and `bns` while the stack runs; the jobs refuse on their
-own too, so plain Compose is just as safe. Build it with Go 1.25 (`cd tools/sbd && go build -o sbd .`),
-or without Go: `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
+own too, so plain Compose is just as safe.
+
+Getting `sbd`:
+- **Release binary** (Linux x86-64 for now): download `sbd-<version>-linux-amd64` from the repo's
+  GitHub Releases, check it against `SHA256SUMS`, and put it on your `PATH`. Other systems: use the
+  image or build from source.
+- **Container image** (linux/amd64 for now), no install: run it from the checkout with the Docker socket and the checkout
+  mounted at the same path (so the paths compose uses resolve on the host):
+  `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
+- **From source** with Go 1.25: `cd tools/sbd && go build -o sbd .`, or without Go:
+  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
 
 # Script options (deprecated)
 

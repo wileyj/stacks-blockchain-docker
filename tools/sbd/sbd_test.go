@@ -137,6 +137,13 @@ func TestPlans(t *testing.T) {
 	}
 }
 
+func TestVersionNeedsNoCheckout(t *testing.T) {
+	var out bytes.Buffer
+	if code := run([]string{"version"}, &out, io.Discard, &fakeDocker{}); code != 0 || out.String() != "sbd dev\n" {
+		t.Errorf("exit %d, %q", code, out.String())
+	}
+}
+
 func TestStartEditsEnvAndRefusesWhileRunning(t *testing.T) {
 	dir := project(t, sampleEnv)
 	d := &fakeDocker{ps: runningPS}

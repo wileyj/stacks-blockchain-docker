@@ -1,0 +1,94 @@
+## Release (refactor/11 §D.1 phase 4): on a pushed v* tag only. Publishes the sbd binary as a GitHub
+## Release and the sbd image to ghcr.io/<owner>/sbd. A tag with a suffix (v1.2.3-rc.1) is a prerelease
+## and doesn't move the image's `latest`. Write access is granted per job, only where it publishes.
+## For now Linux x86-64 only (owner, 2026-11-02); the code also builds for darwin, windows, freebsd and
+## arm64, so more targets are a matter of the lists below.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  binaries:
+    name: build sbd binaries
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: tools/sbd
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: vet and test
+        run: go vet ./... && go test ./...
+      - name: build linux/amd64
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          for target in linux/amd64; do
+            os=${target%/*}; arch=${target#*/}
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags="-s -w -X main.version=${VERSION}" -o "dist/sbd-${VERSION}-${os}-${arch}" .
+          done
+          (cd dist && sha256sum sbd-* > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbd-binaries
+          path: tools/sbd/dist/
+          if-no-files-found: error
+
+  github-release:
+    name: publish the GitHub Release
+    needs: [binaries]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbd-binaries
+          path: dist
+      - name: gh release create
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          pre=""; [[ "$TAG" == *-* ]] && pre="--prerelease"
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes $pre \
+            --title "sbd $TAG"
+
+  image:
+    name: publish the sbd image (linux/amd64)
+    needs: [binaries]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: build and push ghcr.io/<owner>/sbd:<tag> (and latest for a final release)
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sbd"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tags=(-t "${image}:${TAG}")
+          [[ "$TAG" == *-* ]] || tags+=(-t "${image}:latest")
+          docker build --platform linux/amd64 --build-arg VERSION="$TAG" \
+            --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label org.opencontainers.image.version="$TAG" \
+            "${tags[@]}" tools/sbd
+          docker run --rm "${image}:${TAG}" version
+          for t in "${tags[@]}"; do [ "$t" = -t ] || docker push "$t"; done
