@@ -14,7 +14,9 @@ The templates follow upstream stacks-core: `conf/upstream/` holds its sample con
 regenerate the templates with `tools/sync-upstream-conf.sh`.
 
 A hand-edited `Config.toml` from an earlier version is moved to `Config.toml.legacy` the first time the
-job runs; copy any custom settings from it into `Config.overrides.toml`.
+job runs; copy any custom settings from it into `Config.overrides.toml`, or let
+`docker compose run --rm config suggest` (`sbd migrate`) write them to `Config.overrides.toml.suggested`
+for review.
 
 The `[[events_observer]]` blocks follow the enabled services: the API observer only with the `api`
 profile, the signer observer only with `signer`. Any configured observer is a liveness dependency of the
@@ -28,9 +30,9 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 
 | Name                            | Description                                           | Default Value             |
 | ------------------------------- | ----------------------------------------------------- | ------------------------- |
-| `VERBOSE`                       | Enables verbose logging when `./manage.sh` is invoked | `false`                   |
+| `VERBOSE`                       | Enables verbose logging in the deprecated `./manage.sh` | `false`                 |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
-| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`. `./manage.sh` selects them with `-f` instead | `node,api` |
+| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it; the deprecated `./manage.sh` selects them with `-f` per run instead | `node,api` |
 | `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
 | `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
 | `METRICS_BIND_ADDR`             | Host address the node and signer metrics ports are published on | `127.0.0.1` |

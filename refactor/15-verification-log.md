@@ -406,6 +406,17 @@ Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing d
 
 `manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
 
+### Phase 4 first release — GitHub Actions, 2026-11-02 [V]
+
+Signed tag `v0.1.0-rc.1` on `152c3ea` (PR #6 merged), pushed with an explicit refspec. `release.yaml` run 41523724767: `build sbd binaries`, `publish the GitHub Release`, `publish the sbd image (linux/amd64)` all succeeded.
+
+| Check | Result |
+|---|---|
+| Release | prerelease; assets `sbd-v0.1.0-rc.1-linux-amd64` (2.8 MB) and `SHA256SUMS` |
+| Download | `sha256sum -c SHA256SUMS` OK; `./sbd-v0.1.0-rc.1-linux-amd64 version` → `sbd v0.1.0-rc.1` |
+| Image | `ghcr.io/wileyj/sbd:v0.1.0-rc.1`, amd64, `org.opencontainers.image.source` set; anonymous registry token + manifest: 200 (public); `docker run … version` → `sbd v0.1.0-rc.1` |
+| `latest` | not created (prerelease), as designed |
+
 ### Phase 3d pg-upgrade job — Linux x64, 2026-11-02 [V]
 
 `docker compose run --rm -T pg-upgrade …` in project `sbd-pgu`, data on the XFS LV (reflink). Source clusters were made the way the stack's postgres makes them (`postgres:16-alpine`, then `postgres:17-alpine`): 500 000 rows with mixed-case/punctuated text, two B-tree indexes on them, a second database owned by a password-authenticated role.

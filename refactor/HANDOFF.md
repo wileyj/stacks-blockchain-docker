@@ -244,15 +244,17 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
-## Phase 4: release pipeline (2026-11-02, in progress)
+## Phase 4: release pipeline and docs (2026-11-02)
 
 Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (release publishing only; still no branch-pushing or PR-opening jobs).
 - **Linux x86-64 only for now (owner, 2026-11-02).** The code builds for darwin, windows, freebsd and arm64 too (checked locally); adding targets later means extending the target list in `release.yaml`, an arm64 runner for the image, and a macOS/Windows test job in CI (drafted and dropped on 2026-11-02).
 - **`.github/workflows/release.yaml`**, on a pushed `v*` tag only: `binaries` (vet, test, `linux/amd64` with `-X main.version=<tag>`, `SHA256SUMS`, artifact) → `github-release` (`contents: write`; `gh release create --verify-tag --generate-notes`, prerelease for `vX-suffix`) and `image` (`packages: write`; `ghcr.io/<owner>/sbd:<tag>`, and `:latest` for a final release). GitHub-owned actions only (checkout, setup-go v7.0.0, upload/download-artifact), pinned by SHA; `docker login` with the job token.
 - **Image** `tools/sbd/Dockerfile`: `docker:28.5.2-cli` (Compose v2.40.3) + sbd; run with the socket and the checkout at the same path. Verified locally: `version`, `plan`, `doctor` against the host daemon.
 - `sbd version` (`dev` unless stamped).
-- **Not yet exercised on GitHub:** needs a tag push. A first `v0.1.0-rc.1` (prerelease) would test it end to end; the ghcr package is created private on first push (make it public in the package settings if wanted). Anyone with push access can push a `v*` tag: a tag ruleset (e.g. signed tags, owner only) is worth adding.
-- **Remaining in phase 4:** the docs rewrite with two equal paths (README first); decide whether to also publish the job images (config, seed, pg-upgrade), which compose builds locally today.
+- **First release `v0.1.0-rc.1`** (signed tag on `152c3ea`, 2026-11-02): all three jobs passed. The Release is a prerelease with `sbd-v0.1.0-rc.1-linux-amd64` and `SHA256SUMS` (checksum verified, binary prints `sbd v0.1.0-rc.1`); `ghcr.io/wileyj/sbd:v0.1.0-rc.1` (amd64) pulls anonymously (public) and prints the same; no `latest` for the prerelease. (15 "Phase 4")
+- **Deferred (owner, 2026-11-02): tag protection, to revisit against best practices** (who may push `v*` tags, signed tags, immutable releases, provenance/attestations). The `latest` tag is not a concern.
+- **Docs rewrite, two equal paths:** README leads with plain Compose and `sbd` side by side (quickstart table, seed, services), drops the aria2 build guide and the `manage.sh` quickstart; `docs/usage.md` is task-first (table, services, stop, logs, reset, seed, pg-upgrade, BNS, getting `sbd`) with `manage.sh` as a deprecated appendix mapping old commands; `upgrade.md` gains PostgreSQL majors and old-layout installs; `issues.md`, `docker.md`, `config.md`, `monitoring.md` lose the stale `manage.sh`/`sudo`/deleted-script instructions.
+- **Open:** whether to also publish the job images (config, seed, pg-upgrade), which compose builds locally today.
 
 ## Phase 3d: `pg-upgrade` job and `sbd db upgrade`, done (2026-11-02)
 

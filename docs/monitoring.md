@@ -14,7 +14,7 @@ COMPOSE_PROFILES=node,api,monitoring
 
 ```bash
 docker compose up -d
-# or: ./manage.sh -n mainnet -a start -f monitoring
+# or: sbd start --with monitoring
 ```
 
 | Service | URL (from the host) | |
