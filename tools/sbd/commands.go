@@ -20,6 +20,9 @@ type Ctx struct {
 	Yes    bool
 	JSON   bool
 	Out    io.Writer
+	// Remote: docker runs on another machine (--host, or a tcp/ssh DOCKER_HOST), so this host's
+	// disks say nothing about where the data lives
+	Remote bool
 }
 
 // Value reads a setting from .env, falling back to sample.env (what `sbd start` would create).

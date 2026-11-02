@@ -160,7 +160,9 @@ func dispatch(args []string, stdout io.Writer, docker Docker) (int, error) {
 		}
 		docker = execDocker{dir: dir, env: extra}
 	}
-	c := &Ctx{Dir: dir, Docker: docker, Yes: g.yes, JSON: g.json, Out: stdout}
+	dh := os.Getenv("DOCKER_HOST")
+	remote := g.host != "" || strings.HasPrefix(dh, "tcp://") || strings.HasPrefix(dh, "ssh://")
+	c := &Ctx{Dir: dir, Docker: docker, Yes: g.yes, JSON: g.json, Out: stdout, Remote: remote}
 	if env, err := LoadEnv(filepath.Join(dir, ".env")); err == nil {
 		c.Env = env
 	} else if !os.IsNotExist(err) {

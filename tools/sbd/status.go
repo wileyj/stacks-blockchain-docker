@@ -123,12 +123,12 @@ func Doctor(c *Ctx) []Check {
 	default:
 		add("ok", "docker compose", strings.TrimSpace(string(out)))
 	}
-	if out, err := c.Docker.Output([]string{"info", "--format", "{{.ServerVersion}}"}); err != nil {
+	info, err := dockerInfo(c.Docker)
+	if err != nil {
 		add("fail", "docker engine", "not reachable: is the Docker daemon running (or DOCKER_HOST correct)?")
 		return checks
-	} else {
-		add("ok", "docker engine", strings.TrimSpace(string(out)))
 	}
+	add("ok", "docker engine", info.ServerVersion)
 
 	if c.Env == nil {
 		add("warn", ".env", "missing: sbd start creates it from sample.env (or cp sample.env .env)")
@@ -151,6 +151,10 @@ func Doctor(c *Ctx) []Check {
 		if key := signerKeyVar(net); strings.TrimSpace(c.Value(key)) == "" {
 			add("fail", "signer key", key+" is empty, but the signer is enabled")
 		}
+	}
+	checks = append(checks, hostChecks(c, info, profiles)...)
+	if checkNetwork(net) == nil {
+		checks = append(checks, diskChecks(c, profiles, c.Remote)...)
 	}
 	if out, err := c.Docker.Output([]string{"compose", "config", "--quiet"}); err != nil {
 		add("fail", "compose project", strings.TrimSpace(string(out))+" "+err.Error())

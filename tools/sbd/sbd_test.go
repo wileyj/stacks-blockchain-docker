@@ -23,6 +23,7 @@ type fakeDocker struct {
 	ps      string // docker compose ps --format json output
 	version string
 	config  string // docker compose config --format json output
+	info    string // docker info --format '{{json .}}' output
 	exit    int
 	ran     []string
 }
@@ -38,8 +39,11 @@ func (f *fakeDocker) Output(args []string) ([]byte, error) {
 		return []byte(f.ps), nil
 	case "compose version --short":
 		return []byte(f.version + "\n"), nil
-	case "info --format {{.ServerVersion}}":
-		return []byte("28.0.0\n"), nil
+	case "info --format {{json .}}":
+		if f.info != "" {
+			return []byte(f.info), nil
+		}
+		return []byte(`{"ServerVersion":"28.0.0","OperatingSystem":"Debian","Architecture":"x86_64","MemTotal":68719476736,"NCPU":20}`), nil
 	case "compose --profile * config --format json":
 		return []byte(f.config), nil
 	}
@@ -334,5 +338,51 @@ func TestMigrate(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".env"), []byte(sampleEnv), 0o600)
 	if _, out, _ := sbd(t, dir, &fakeDocker{}, "plan", "migrate"); out != "# nothing to migrate\n" {
 		t.Errorf("up to date:\n%s", out)
+	}
+}
+
+func TestDoctorHostAndDisk(t *testing.T) {
+	// Mainnet node+api on a fresh disk needs about 1.1 TB plus 20%: a temp dir's disk is smaller
+	dir := project(t, sampleEnv)
+	desktop := `{"ServerVersion":"28.0.0","OperatingSystem":"Docker Desktop","Architecture":"aarch64","MemTotal":4294967296,"NCPU":4}`
+	code, out, _ := sbd(t, dir, &fakeDocker{version: "2.39.1", info: desktop}, "doctor")
+	for _, want := range []string{"8 GB or more is recommended", "Docker Desktop: bind-mounted chain data", "disk space"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("doctor lacks %q:\n%s", want, out)
+		}
+	}
+	if code != 0 {
+		t.Errorf("host and disk findings are warnings, never failures: exit %d\n%s", code, out)
+	}
+
+	// Existing data only needs room to grow; both components share the temp dir's filesystem
+	for _, sub := range []string{"stacks-blockchain", "postgres"} {
+		os.MkdirAll(filepath.Join(dir, "persistent-data", "mainnet", sub, "x"), 0o755)
+	}
+	env := strings.Replace(sampleEnv, "NETWORK=mainnet", "NETWORK=testnet", 1)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600)
+	_, out, _ = sbd(t, dir, &fakeDocker{version: "2.39.1"}, "doctor", "--json")
+	var checks []Check
+	if err := json.Unmarshal([]byte(out), &checks); err != nil {
+		t.Fatal(err)
+	}
+	var disk []Check
+	for _, c := range checks {
+		if c.What == "disk space" {
+			disk = append(disk, c)
+		}
+	}
+	if len(disk) != 1 || !strings.Contains(disk[0].Detail, "60 GB wanted") || !strings.Contains(disk[0].Detail, "node ") || !strings.Contains(disk[0].Detail, "api ") {
+		t.Errorf("testnet fresh: one filesystem, (25+25)*1.2 = 60 GB for node and api: %+v", disk)
+	}
+
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(sampleEnv), 0o600)
+	_, out, _ = sbd(t, dir, &fakeDocker{version: "2.39.1"}, "doctor")
+	if !strings.Contains(out, "has data; 50 GB to grow") || !strings.Contains(out, "100 GB wanted") {
+		t.Errorf("mainnet with data: growth headroom only:\n%s", out)
+	}
+	_, out, _ = sbd(t, dir, &fakeDocker{version: "2.39.1"}, "--host", "ssh://node1", "doctor")
+	if !strings.Contains(out, "not checked: the data is on the remote Docker host") {
+		t.Errorf("remote docker host:\n%s", out)
 	}
 }
