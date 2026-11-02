@@ -54,6 +54,9 @@ func main() {
 		case "reset":
 			cmd, run = "reset", runReset
 			os.Args = os.Args[1:]
+		case "pg-upgrade":
+			cmd, run = "pg-upgrade", runPGUpgrade
+			os.Args = os.Args[1:]
 		case "build-indexes":
 			cmd, run = "build-indexes", runBuildIndexes
 			os.Args = os.Args[1:]

@@ -148,14 +148,17 @@ func PrepareStaging(dir string, owner Owner, mode os.FileMode) (string, error) {
 
 // SwapIn replaces the contents of dir with the contents of <dir>/.seed-staging. The dir itself is
 // kept (it may be a mount point, refactor/09 D48); everything else in it is removed first.
-func SwapIn(dir string) error {
-	staging := filepath.Join(dir, StagingName)
+func SwapIn(dir string) error { return SwapInFrom(dir, StagingName) }
+
+// SwapInFrom is SwapIn for the staging dir <dir>/<name>.
+func SwapInFrom(dir, name string) error {
+	staging := filepath.Join(dir, name)
 	old, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, e := range old {
-		if e.Name() == StagingName {
+		if e.Name() == name {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {

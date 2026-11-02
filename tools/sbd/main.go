@@ -24,7 +24,7 @@ type globals struct {
 
 // passThrough commands hand everything after their name to a job unchanged: `sbd seed --dry-run --yes`
 // runs the seed job's own dry run.
-var passThrough = map[string]bool{"seed": true}
+var passThrough = map[string]bool{"seed": true, "db": true}
 
 // splitGlobals takes the global options out of args, wherever they appear before a `--` or the
 // arguments of a pass-through command.

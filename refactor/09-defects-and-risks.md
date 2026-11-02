@@ -172,6 +172,8 @@ Stopping an already stopped stack exits 1.
 `date "+%D %H:%m:%S"` (manage.sh, seed, upgrade) prints the month where minutes should be.
 
 ### D26 — Medium — `postgres-upgrade.sh` defects **[S]**
+**Fixed 2026-11-02:** the script is removed; the `pg-upgrade` job replaces it (any network, version read from `PG_VERSION`, running check, staging + swap, no TTY needed; 15 "Phase 3d").
+
 - WIP: mainnet only, source version hard-coded to 13, user `postgres` hard-coded.
 - Uses `docker exec -it` (needs a TTY).
 - The start timestamp's `date` call errors (escaped quotes).

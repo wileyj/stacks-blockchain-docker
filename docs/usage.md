@@ -27,6 +27,7 @@ choosing the network and the services. Two optional helpers sit on top and run t
 | Seed from the Hiro archive (stopped stack) | `docker compose run --rm seed` | `sbd seed [seed options]` |
 | Delete this network's data (stopped stack) | `docker compose run --rm reset --yes` (without `--yes`, it asks on a terminal) | `sbd reset [--yes]` |
 | Download legacy BNS data (stopped stack) | `docker compose run --rm bns` | `sbd bns` |
+| Upgrade the API database after raising `POSTGRES_VERSION` (stopped stack) | `docker compose run --rm pg-upgrade` (`--dry-run`, `--mode auto\|clone\|copy\|link`) | `sbd db upgrade` |
 | Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
 | Preflight checks | — | `sbd doctor` |
 | Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
@@ -171,6 +172,26 @@ docker compose run --rm seed --chainstate <file>.tar.zst --pgdump <file>.dump
 docker compose run --rm seed --defer-index nft_events_asset_identifier_index
 docker compose logs -f build-indexes   # progress of deferred index builds once the stack runs
 ```
+
+### Upgrade the API database to a new PostgreSQL major
+
+After raising `POSTGRES_VERSION` in `.env` (for example from 16 to 17), upgrade the existing database
+before starting the stack; the new postgres can't open an older major's files. The job runs
+`pg_upgrade` with the stack's own postgres image, builds the new cluster next to the old one in the
+data dir, and swaps it in only after the upgrade and the statistics rebuild succeed.
+
+```bash
+docker compose --profile '*' down
+docker compose run --rm pg-upgrade --dry-run   # versions, size, mode, free space
+docker compose run --rm pg-upgrade             # asks first; --yes (or CONFIRM=yes) without a terminal
+```
+
+`--mode`: `auto` (the default) uses `clone` where the filesystem supports copy-on-write files (XFS
+with reflink, Btrfs: instant, no extra space), else `copy` if the database fits a second time, else it
+stops and suggests `link`: hard links, minutes and no extra space, but once the new cluster has run the
+old one can't be used again. Roles, passwords and `pg_hba.conf` are kept; the new release's
+`postgresql.conf` defaults are used. The image can upgrade from the older majors its Alpine release
+packages (16 for PostgreSQL 17); for anything older, re-seed instead.
 
 ### Download BNS data
 

@@ -13,7 +13,16 @@ RUN go mod download
 COPY tools/seed/ ./
 RUN go vet ./... && go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/seed .
 
-FROM postgres:${PG_VERSION}-alpine
+## The `pg-upgrade` job (pgupgrade.go): this image's binaries build the new cluster, and Alpine's
+## packages of every older major it ships provide the old server for pg_upgrade (musl on both sides)
+FROM postgres:${PG_VERSION}-alpine AS pg-upgrade
+ARG PG_VERSION
+RUN for v in $(seq 13 $((PG_VERSION - 1))); do apk add --no-cache "postgresql${v}" >/dev/null 2>&1 && echo "old server: PostgreSQL ${v}"; done; true
+COPY --from=build /out/seed /usr/local/bin/seed
+ENTRYPOINT ["/usr/local/bin/seed", "pg-upgrade"]
+
+## The `seed` job (the default target, last)
+FROM postgres:${PG_VERSION}-alpine AS seed
 # GNU tar (the image has busybox tar), and the decompressors it runs
 RUN apk add --no-cache tar zstd xz
 COPY --from=build /out/seed /usr/local/bin/seed

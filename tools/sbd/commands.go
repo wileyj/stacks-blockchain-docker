@@ -366,6 +366,14 @@ var Commands = []*Command{
 			}
 			return jobPlan("reset", true)(c, nil)
 		}, Guard: refuseIfRunning("reset")},
+	{Name: "db", Usage: "db upgrade [--dry-run] [--mode auto|clone|copy|link]",
+		Help: "Upgrade the API database to POSTGRES_VERSION with pg_upgrade (stack must be stopped)",
+		Plan: func(c *Ctx, args []string) (Plan, error) {
+			if len(args) == 0 || args[0] != "upgrade" {
+				return nil, usagef("usage: sbd db upgrade [--dry-run] [--mode auto|clone|copy|link]")
+			}
+			return jobPlan("pg-upgrade", true)(c, args[1:])
+		}, Guard: refuseIfRunning("db upgrade")},
 	{Name: "bns", Usage: "bns", Help: "Download the legacy BNS data (stack must be stopped)",
 		Plan: noArgs("bns", Plan{compose("run", "--rm", "bns")}), Guard: refuseIfRunning("bns")},
 	{Name: "config", Usage: "config render", Help: "Render Config.toml/Signer.toml now (start does this too)", Plan: configPlan},

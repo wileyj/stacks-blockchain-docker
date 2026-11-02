@@ -80,6 +80,9 @@ services:
     environment:
       - POSTGRES_PASSWORD=${PG_PASSWORD:-postgres}
       - POSTGRES_DB=${PG_DATABASE:-postgres}
+      ## Explicit: from PostgreSQL 18 the official images default to /var/lib/postgresql/18/docker, which
+      ## isn't where the data is mounted (an 18 bump would otherwise start an empty database)
+      - PGDATA=/var/lib/postgresql/data
       ## read by scripts/postgres-initdb.sh
       - PG_USER
       - PG_DATABASE
@@ -304,6 +307,27 @@ services:
       - ${STACKS_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-blockchain}:/data/stacks-blockchain
       - ${POSTGRES_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/postgres}:/data/postgres
       - ${SIGNER_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-signer}:/data/stacks-signer
+
+  ## Upgrade the API database to POSTGRES_VERSION with pg_upgrade, stack stopped (tools/seed/pgupgrade.go):
+  ##   docker compose run --rm pg-upgrade [--dry-run] [--yes] [--mode auto|clone|copy|link]
+  pg-upgrade:
+    build:
+      context: .
+      dockerfile: tools/seed/Dockerfile
+      target: pg-upgrade
+      args:
+        PG_VERSION: ${POSTGRES_VERSION:-17}
+    image: stacks-blockchain-docker-pg-upgrade:pg${POSTGRES_VERSION:-17}
+    pull_policy: build
+    restart: "no"
+    profiles: [pg-upgrade]
+    shm_size: ${PG_SHMSIZE:-256MB}
+    environment:
+      - NETWORK
+      - CONFIRM
+      - PG_USER
+    volumes:
+      - ${POSTGRES_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/postgres}:/data/postgres
 
   ## Legacy BNS v1 data for a genesis sync with BNS_IMPORT_DIR set: docker compose --profile bns up
   bns:
