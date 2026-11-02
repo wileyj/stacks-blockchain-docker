@@ -242,7 +242,28 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 - **Disk:** per enabled component (`node` → `STACKS_DATA_DIR`, `api` → `POSTGRES_DATA_DIR`, resolved like compose.yaml), the free space on its filesystem (nearest existing parent) against the estimate + 20% for a component without data, or growth headroom (50 GB mainnet / 5 GB testnet) where data exists; needs on one filesystem add up. Estimates from this repo's seeds: mainnet node 620 GB, API 510 GB; testnet 25 + 25 GB. Skipped for a remote Docker host (`--host`, tcp/ssh `DOCKER_HOST`).
 - Free space via `statfs` (unix) or `GetDiskFreeSpaceExW` (Windows); vets/builds for linux, darwin, windows, freebsd. `docs/requirements.md` rewritten with the measured sizes (it said 150 GB).
 
-**Next increments:** `db upgrade` once the `pg-upgrade` job exists (phase 3 work, next); release builds (phase 4).
+**Next increments:** release builds (phase 4).
+
+## Phase 4: release pipeline (2026-11-02, in progress)
+
+Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (release publishing only; still no branch-pushing or PR-opening jobs).
+- **Linux x86-64 only for now (owner, 2026-11-02).** The code builds for darwin, windows, freebsd and arm64 too (checked locally); adding targets later means extending the target list in `release.yaml`, an arm64 runner for the image, and a macOS/Windows test job in CI (drafted and dropped on 2026-11-02).
+- **`.github/workflows/release.yaml`**, on a pushed `v*` tag only: `binaries` (vet, test, `linux/amd64` with `-X main.version=<tag>`, `SHA256SUMS`, artifact) → `github-release` (`contents: write`; `gh release create --verify-tag --generate-notes`, prerelease for `vX-suffix`) and `image` (`packages: write`; `ghcr.io/<owner>/sbd:<tag>`, and `:latest` for a final release). GitHub-owned actions only (checkout, setup-go v7.0.0, upload/download-artifact), pinned by SHA; `docker login` with the job token.
+- **Image** `tools/sbd/Dockerfile`: `docker:28.5.2-cli` (Compose v2.40.3) + sbd; run with the socket and the checkout at the same path. Verified locally: `version`, `plan`, `doctor` against the host daemon.
+- `sbd version` (`dev` unless stamped).
+- **Not yet exercised on GitHub:** needs a tag push. A first `v0.1.0-rc.1` (prerelease) would test it end to end; the ghcr package is created private on first push (make it public in the package settings if wanted). Anyone with push access can push a `v*` tag: a tag ruleset (e.g. signed tags, owner only) is worth adding.
+- **Remaining in phase 4:** the docs rewrite with two equal paths (README first); decide whether to also publish the job images (config, seed, pg-upgrade), which compose builds locally today.
+
+## Phase 3d: `pg-upgrade` job and `sbd db upgrade`, done (2026-11-02)
+
+`seed pg-upgrade` subcommand; image = the `pg-upgrade` stage of `tools/seed/Dockerfile` (`postgres:<ver>-alpine` + Alpine's `postgresql<old>` packages for every older major it ships); compose service `pg-upgrade` (profile `pg-upgrade`): `docker compose run --rm pg-upgrade [--dry-run] [--yes] [--mode auto|clone|copy|link] [--skip-analyze]`, or `sbd db upgrade`. Replaces `scripts/postgres-upgrade.sh` (removed; D26 fixed). Q9 as settled.
+- **Method:** `pg_upgrade`. The new cluster is built by the image's own binaries (the stack's official image) and the old server is Alpine's package: musl on both sides, so text indexes stay valid (the Run 3 lesson). Source major from `<data>/PG_VERSION`; same major → no-op; newer → refuse; no package for it (≤15 today) → refuse, suggesting a re-seed.
+- **Matching the old cluster:** it starts the old server on a private socket to read the install user, template0's encoding/locale/provider and `data_checksums`, and `initdb`s the new one to match.
+- **Staging + swap:** `<data>/.pg-upgrade-staging`, swapped in only after `pg_upgrade` and the statistics rebuild succeed; removed on failure. `pg_hba.conf`/`pg_ident.conf` are carried over; `ALTER SYSTEM` settings are reported, not copied.
+- **Modes:** `auto` → `clone` (reflink check) → `copy` if size+10% is free → else refuse and suggest `link` (stated: old cluster unusable once the new one has run).
+- **Guards:** stopped stack, `postmaster.pid` (unclean shutdown), data owned by the postgres uid, `--yes`/TTY.
+- **`compose.yaml`:** `PGDATA=/var/lib/postgresql/data` on postgres (the 18 images moved the default; an 18 bump would have started empty).
+- Verified 16→17 (clone, copy, link) and 17→18 with real clusters (15 "Phase 3d").
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 

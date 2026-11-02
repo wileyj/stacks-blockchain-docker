@@ -16,6 +16,9 @@ import (
 	"strings"
 )
 
+// version is set at release build time (-ldflags "-X main.version=v1.2.3").
+var version = "dev"
+
 type globals struct {
 	projectDir, host string
 	dryRun, yes      bool
@@ -24,7 +27,7 @@ type globals struct {
 
 // passThrough commands hand everything after their name to a job unchanged: `sbd seed --dry-run --yes`
 // runs the seed job's own dry run.
-var passThrough = map[string]bool{"seed": true}
+var passThrough = map[string]bool{"seed": true, "db": true}
 
 // splitGlobals takes the global options out of args, wherever they appear before a `--` or the
 // arguments of a pass-through command.
@@ -87,6 +90,7 @@ Commands:
 		fmt.Fprintf(w, "  %-28s %s%s\n", c.Name, c.Help, alias)
 	}
 	fmt.Fprint(w, `  plan <command> [options]     Print what <command> would do (.env edits and docker compose commands)
+  version                      Print the sbd version
 
 Global options:
   -C, --project-dir DIR   the repo checkout (default: found from the current directory upwards)
@@ -127,6 +131,10 @@ func dispatch(args []string, stdout io.Writer, docker Docker) (int, error) {
 	if len(rest) > 0 && rest[0] == "plan" {
 		g.dryRun = true
 		rest = rest[1:]
+	}
+	if len(rest) > 0 && (rest[0] == "version" || rest[0] == "--version") {
+		fmt.Fprintln(stdout, "sbd", version)
+		return 0, nil
 	}
 	if len(rest) == 0 || rest[0] == "help" {
 		usage(stdout)

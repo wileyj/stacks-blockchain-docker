@@ -406,6 +406,23 @@ Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing d
 
 `manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
 
+### Phase 3d pg-upgrade job — Linux x64, 2026-11-02 [V]
+
+`docker compose run --rm -T pg-upgrade …` in project `sbd-pgu`, data on the XFS LV (reflink). Source clusters were made the way the stack's postgres makes them (`postgres:16-alpine`, then `postgres:17-alpine`): 500 000 rows with mixed-case/punctuated text, two B-tree indexes on them, a second database owned by a password-authenticated role.
+
+| Step | Result |
+|---|---|
+| `--dry-run` | "PostgreSQL 16 -> 17, 203.9 MiB of data, mode clone (4.6 TiB free)"; nothing changed |
+| 16 → 17, `auto` (= clone) | 4 s; old cluster read first (install user, UTF8, en_US.utf8, libc); statistics rebuilt (`vacuumdb --analyze-in-stages`); swapped in, owner 70, mode 0700, no staging left |
+| Checked with `postgres:17-alpine` | 17.11; all rows and distinct values; `api` logs in with its password over TCP; `bt_index_check(…, true)` passes on both text indexes; table statistics present |
+| `--mode copy`, `--mode link` (fresh 16 clusters) | 3 s each; accepted by `postgres:17-alpine`, data and amcheck OK |
+| Already 17 | "already PostgreSQL 17; nothing to do", exit 0 |
+| Stack's postgres running | Refused, exit 1 |
+| No TTY, no `--yes` | Plan printed, then refused, exit 2 |
+| 17 → 18 | **Failed first**: 18's `initdb` enables data checksums by default and `pg_upgrade` requires the old cluster's setting ("old cluster does not use data checksums but the new one does"); old data unchanged. Fixed: the old setting is read and passed (`--no-data-checksums` from 18). Then 3 s, and the stack's own `postgres` service on `postgres:18-alpine` came up healthy with the data |
+
+Found along the way: from PostgreSQL 18 the official images default `PGDATA` to `/var/lib/postgresql/18/docker`, not the `/var/lib/postgresql/data` this repo mounts, so a bump to 18 would have started an **empty** database. `compose.yaml` now sets `PGDATA=/var/lib/postgresql/data` (a no-op on 17).
+
 ### Phase 3c mainnet seed, segmented downloads, native extraction — Linux x64, 2026-10-28 [V]
 
 Project `sbd-mainnet`, a repo copy on the 3 TB LV (`/stacks/temp/sbd-mainnet`, not the symlink), LAN BTC peer. Snapshot `20261027`: core 4.0.4, API 9.7.0, pg17 (the exact pins). Chainstate 261.4 GiB, dump 98.8 GiB.

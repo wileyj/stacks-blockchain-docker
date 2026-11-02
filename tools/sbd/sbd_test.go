@@ -109,6 +109,10 @@ func TestPlans(t *testing.T) {
 		{"reset", sampleEnv, []string{"reset"}, "docker compose run --rm reset\n", 0},
 		{"reset --yes", sampleEnv, []string{"reset", "--yes"}, "docker compose run --rm reset --yes\n", 0},
 		{"bns", sampleEnv, []string{"bns"}, "docker compose run --rm bns\n", 0},
+		{"db upgrade", sampleEnv, []string{"db", "upgrade"}, "docker compose run --rm pg-upgrade\n", 0},
+		{"db upgrade passes its options through", sampleEnv, []string{"db", "upgrade", "--dry-run", "--mode", "link", "--yes"},
+			"docker compose run --rm pg-upgrade --dry-run --mode link --yes\n", 0},
+		{"db without upgrade", sampleEnv, []string{"db"}, "", 2},
 		{"config render", sampleEnv, []string{"config", "render"}, "docker compose run --rm config\n", 0},
 		{"config without render", sampleEnv, []string{"config"}, "", 2},
 		{"env set", sampleEnv, []string{"env", "set", "NETWORK=Testnet", "STACKS_LOG_DEBUG=1"}, "edit .env: NETWORK=testnet\nedit .env: STACKS_LOG_DEBUG=1\n", 0},
@@ -130,6 +134,13 @@ func TestPlans(t *testing.T) {
 				t.Errorf("plan must not run anything, ran %v", d.ran)
 			}
 		})
+	}
+}
+
+func TestVersionNeedsNoCheckout(t *testing.T) {
+	var out bytes.Buffer
+	if code := run([]string{"version"}, &out, io.Discard, &fakeDocker{}); code != 0 || out.String() != "sbd dev\n" {
+		t.Errorf("exit %d, %q", code, out.String())
 	}
 }
 
@@ -173,7 +184,7 @@ func TestStartCreatesEnv(t *testing.T) {
 }
 
 func TestJobsRefuseWhileRunning(t *testing.T) {
-	for _, args := range [][]string{{"reset", "--yes"}, {"seed"}, {"bns"}} {
+	for _, args := range [][]string{{"reset", "--yes"}, {"seed"}, {"bns"}, {"db", "upgrade"}} {
 		dir := project(t, sampleEnv)
 		d := &fakeDocker{ps: runningPS}
 		code, _, errOut := sbd(t, dir, d, args...)
@@ -284,7 +295,7 @@ func TestPlansAreDocumented(t *testing.T) {
 	seen := map[string]bool{}
 	for _, args := range [][]string{
 		{"start"}, {"stop"}, {"logs"}, {"logs", "stacks-blockchain"}, {"logs", "export"},
-		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"config", "render"}, {"migrate"},
+		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"db", "upgrade"}, {"config", "render"}, {"migrate"},
 	} {
 		_, out, _ := sbd(t, dir, &fakeDocker{ps: strings.SplitN(runningPS, "\n", 2)[0]}, append([]string{"plan"}, args...)...)
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
