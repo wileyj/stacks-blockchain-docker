@@ -236,7 +236,13 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 - Reports obsolete `.env` keys (`STACKS_EXPORT_EVENTS_FILE`), an unused `event-replay` data dir, and running containers of the old `compose-files` project.
 - Verified end to end on a copy with the `d2e558c` `.env` and a hand-edited `Config.toml`: profiles added, suggestion correct (two user edits and a custom observer; nothing from the network definition), accepted, rendered, and `check-config` passed.
 
-**Next increments:** `db upgrade` once the `pg-upgrade` job exists; disk-space and arch checks in `doctor`; release builds (phase 4).
+**`sbd doctor` host and disk checks (2026-10-29):** replace `manage.sh`'s arm64 prompt (warnings only, Q12).
+- **Resources:** memory and CPUs from `docker info` (8 GB wanted for mainnet with the API, else 4 GB; 2+ CPUs).
+- **Storage:** Docker Desktop's bind mounts are slow for chain data (mainnet → use a Linux host); on Windows, a data path outside the WSL filesystem is slow.
+- **Disk:** per enabled component (`node` → `STACKS_DATA_DIR`, `api` → `POSTGRES_DATA_DIR`, resolved like compose.yaml), the free space on its filesystem (nearest existing parent) against the estimate + 20% for a component without data, or growth headroom (50 GB mainnet / 5 GB testnet) where data exists; needs on one filesystem add up. Estimates from this repo's seeds: mainnet node 620 GB, API 510 GB; testnet 25 + 25 GB. Skipped for a remote Docker host (`--host`, tcp/ssh `DOCKER_HOST`).
+- Free space via `statfs` (unix) or `GetDiskFreeSpaceExW` (Windows); vets/builds for linux, darwin, windows, freebsd. `docs/requirements.md` rewritten with the measured sizes (it said 150 GB).
+
+**Next increments:** `db upgrade` once the `pg-upgrade` job exists (phase 3 work, next); release builds (phase 4).
 
 ## Deferred: pare down metrics collection before release (owner, 2026-10-27)
 
