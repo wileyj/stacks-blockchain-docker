@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -111,8 +112,19 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 		return err
 	}
 
+	// The database is created from the dump's own CREATE DATABASE (its encoding and locale), not with
+	// pg_restore --create: that would also apply the dump's database settings, which name Hiro's roles
+	// (the 20261103 dump's `ALTER ROLE hirosystems IN DATABASE ... SET search_path` failed the restore)
+	// and the schema before the rename below.
+	create, err := createDatabaseSQL(ctx, dump)
+	if err != nil {
+		return err
+	}
+	if err := run(ctx, "psql", "-h", pgSocket, "-U", pg.User, "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-c", create); err != nil {
+		return fmt.Errorf("%s: %w", create, err)
+	}
 	restoreArgs := []string{"-h", pgSocket, "-U", pg.User, "--no-owner", "--no-privileges",
-		"--create", "--dbname=postgres", fmt.Sprintf("--jobs=%d", pg.Jobs)}
+		"--dbname=" + dumpSchema, fmt.Sprintf("--jobs=%d", pg.Jobs)}
 	var deferredNames, deferredDefs []string
 	if len(pg.Defer) > 0 {
 		list, names, defs, err := deferIndexes(ctx, dump, pgdata, pg)
@@ -141,6 +153,27 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 		}
 	}
 	return stop()
+}
+
+var createDatabaseRe = regexp.MustCompile(`(?m)^CREATE DATABASE [^;]*;`)
+
+// createDatabaseSQL returns the dump's CREATE DATABASE statement (pg_restore --create's script).
+func createDatabaseSQL(ctx context.Context, dump string) (string, error) {
+	out, err := exec.CommandContext(ctx, "pg_restore", "--create", "--schema-only", "-f", "-", dump).Output()
+	if err != nil {
+		return "", fmt.Errorf("reading the dump's CREATE DATABASE: %w", err)
+	}
+	return CreateDatabaseStatement(string(out))
+}
+
+// CreateDatabaseStatement picks the CREATE DATABASE for the dump's database out of a restore script.
+func CreateDatabaseStatement(script string) (string, error) {
+	for _, stmt := range createDatabaseRe.FindAllString(script, -1) {
+		if strings.HasPrefix(stmt, "CREATE DATABASE "+dumpSchema+" ") {
+			return stmt, nil
+		}
+	}
+	return "", fmt.Errorf("the dump has no CREATE DATABASE %s", dumpSchema)
 }
 
 // deferIndexes writes a restore list without the deferred indexes (into the staging dir, which is
