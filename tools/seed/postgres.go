@@ -152,6 +152,16 @@ func RestoreDump(ctx context.Context, dump, pgdata string, pg PG) error {
 			return fmt.Errorf("recording the deferred indexes: %w", err)
 		}
 	}
+	// pg_restore leaves the planner without statistics, and the API's per-block queries then run on bad
+	// plans until autovacuum has analyzed every large table: on mainnet, 12-15 s per /new_block and a
+	// node falling behind the chain for hours (refactor/15 "Phase 5"). ANALYZE samples, so this takes
+	// minutes.
+	fmt.Println("seed: analyzing the restored database (planner statistics)")
+	start := time.Now()
+	if err := run(ctx, "vacuumdb", "-h", pgSocket, "-U", pg.User, "-d", pg.Database, "--analyze-only", fmt.Sprintf("--jobs=%d", pg.Jobs)); err != nil {
+		return fmt.Errorf("vacuumdb --analyze-only: %w", err)
+	}
+	fmt.Printf("seed: analyzed in %s\n", time.Since(start).Truncate(time.Second))
 	return stop()
 }
 
