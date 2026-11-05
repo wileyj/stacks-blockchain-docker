@@ -35,10 +35,15 @@ refuse on their own too, so plain Compose is just as safe.
 
 Getting `sbd`:
 - **Release binary** (Linux x86-64 for now): download `sbd-<version>-linux-amd64` from the repo's
-  GitHub Releases, check it against `SHA256SUMS`, and put it on your `PATH`.
+  GitHub Releases, check it, and put it on your `PATH`:
+  `sha256sum -c --ignore-missing SHA256SUMS`, and (with the GitHub CLI) its build provenance:
+  `gh attestation verify sbd-<version>-linux-amd64 --repo <owner>/stacks-blockchain-docker`, which
+  shows it was built by the release workflow from the signed tag. Releases can't be changed once
+  published.
 - **Container image** (linux/amd64 for now), no install: run it from the checkout with the Docker
   socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:
   `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
+  (provenance: `gh attestation verify oci://ghcr.io/<owner>/sbd:<version> --repo <owner>/stacks-blockchain-docker`)
 - **From source** with Go 1.25, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
   `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
 
