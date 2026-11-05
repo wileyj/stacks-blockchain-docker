@@ -34,6 +34,19 @@ groups:
           summary: "Stacks tip hasn't advanced for 35 minutes"
           description: "No new Stacks block in 35 minutes although the node has peers. A blocked event observer (API or signer down) stalls the node (refactor/09 D46/D55)."
 
+      ## Bitcoin blocks come every 10 min on average but gaps of 60-90 min are routine (the mainnet soak saw
+      ## 92 min within 2 days), and 2 h+ a few times a year, hence 2 h plus 30 min. A node that is still
+      ## catching up from a snapshot also holds its burn height for an hour or more (stacks-core paces
+      ## sortitions to its Stacks blocks): check the Stacks tip before acting
+      ## `offset 2h`: only with 2 h of history, so a restarted node or Prometheus doesn't alert after 30 min
+      - alert: StacksBurnchainStalled
+        expr: changes(stacks_node_burn_block_height[2h]) == 0 and stacks_node_burn_block_height offset 2h
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Burn (Bitcoin) height hasn't advanced for 2.5 hours"
+          description: "No change in the node's burn height for 2.5 hours. Check the Bitcoin peer (BTC_HOST) and the node's log; a node still catching up from a snapshot also holds its burn height while it processes Stacks blocks."
+
       - alert: StacksNoPeers
         expr: stacks_node_neighbors_outbound == 0
         for: 15m

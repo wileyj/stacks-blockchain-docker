@@ -58,6 +58,7 @@ and alerts, visible under Prometheus → Alerts and on the Stacks node dashboard
 | Alert | Fires when |
 |---|---|
 | `StacksTipStalled` | no new Stacks block for 35 min while the node has peers |
+| `StacksBurnchainStalled` | the burn (Bitcoin) height hasn't changed for 2.5 h (Bitcoin gaps of 60–90 min are routine; a node catching up from a snapshot can also hold it) |
 | `StacksNoPeers` | no outbound peers for 15 min |
 | `StacksApiBehindNode` / `StacksSignerBehindNode` | API more than 10 blocks behind for 10 min / signer more than 5 for 15 min |
 | `StacksSignerRejecting` | the signer rejects more than half of the proposals for 30 min |

@@ -165,7 +165,7 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 **Not done:**
 - Alertmanager (M5, later);
 - the `stacks-status` companion (M3, deferred);
-- a burn-height/"behind Bitcoin" alert (needs a reference);
+- ~~a burn-height/"behind Bitcoin" alert (needs a reference);~~ **done 2026-11-05:** `StacksBurnchainStalled`, no burn-height change for 2 h (with 2 h of history, so restarts don't trigger it) plus 30 min. No external reference: the soak saw routine gaps up to 92 min, and replaying 2 days of Run A it never went pending;
 - an event-age alert (the units of `stacks_last_event_timestamps` aren't verified);
 - trimming the collected series (M7, below).
 
