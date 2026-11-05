@@ -244,6 +244,10 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
+## Phase 6: `sbd init`, done (2026-11-05)
+
+Owner, 2026-11-05: "init", not "wizard"; still needed. `tools/sbd/init.go`, spec in 13 §1 (updated to what is implemented): preflight → network → services → signer key (masked, validated) → generated `AUTH_TOKEN` (replaces `1234`) → Bitcoin peer (connect test) → data location (disk check) → proxy TLS → generated Grafana and (new database only) postgres passwords → review with secrets hidden → write `.env` → seed/genesis/later, optional start. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env`. New dependency: `golang.org/x/term` (masked input). Verified with scripted tests and in a pseudo-terminal (`script`): the key wasn't echoed, the review hid every secret. `sbd ui` (the dashboard) is not started.
+
 ## Phase 5: soak (started 2026-11-03, in progress)
 
 Owner, 2026-11-03: a 7-day Run A, then review; a genesis-sync Run B only until past the heavy blocks (Q26), not for days. Details in 15 "Phase 5".

@@ -23,6 +23,7 @@ by side.
 ```bash
 git clone https://github.com/stx-labs/stacks-blockchain-docker && cd stacks-blockchain-docker
 cp sample.env .env      # NETWORK=mainnet and COMPOSE_PROFILES=node,api by default
+# or, with sbd: sbd init  (asks step by step, generates the secrets, writes .env)
 ```
 
 | | Plain Docker Compose | `sbd` |

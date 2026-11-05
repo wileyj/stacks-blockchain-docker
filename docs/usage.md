@@ -11,6 +11,7 @@ both: neither keeps state the other doesn't see.
 
 | Task | Plain Docker Compose | `sbd` |
 |---|---|---|
+| First setup | `cp sample.env .env`, then edit it (`NETWORK`, `COMPOSE_PROFILES`, keys, data location) | `sbd init`: asks step by step, generates the secrets, shows every change, writes `.env` (`--from answers.env` / `--yes` without a terminal) |
 | Start the services in `COMPOSE_PROFILES` | `docker compose up -d` | `sbd start` |
 | Change network or services | edit `NETWORK` / `COMPOSE_PROFILES` in `.env`, then `docker compose up -d` | `sbd start --network testnet --with signer,monitoring` (also `--without`, `--profiles`) |
 | Stop (node first, graceful) | `docker compose --profile '*' down` | `sbd stop` |

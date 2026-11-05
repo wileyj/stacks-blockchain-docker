@@ -113,8 +113,12 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 				if err := env.Save(!backedUp); err != nil {
 					return 1, err
 				}
+				note := ""
+				if !backedUp {
+					note = " (previous .env in .env.save)"
+				}
 				backedUp = true
-				fmt.Fprintf(os.Stderr, "sbd: .env: %s=%s (previous .env in .env.save)\n", s.SetKey, shown(s.SetKey, s.SetValue))
+				fmt.Fprintf(os.Stderr, "sbd: .env: %s=%s%s\n", s.SetKey, shown(s.SetKey, s.SetValue), note)
 			}
 		default:
 			out := io.Writer(os.Stdout)
