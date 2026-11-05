@@ -48,3 +48,6 @@ conf/*/*.legacy*
 
 # config job: rendered Prometheus config
 conf/monitoring/prometheus.yml
+conf/monitoring/grafana/provisioning/alerting/stacks.json
+conf/nginx/proxy.conf
+conf/nginx/tls/*.pem

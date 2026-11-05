@@ -14,7 +14,9 @@ The templates follow upstream stacks-core: `conf/upstream/` holds its sample con
 regenerate the templates with `tools/sync-upstream-conf.sh`.
 
 A hand-edited `Config.toml` from an earlier version is moved to `Config.toml.legacy` the first time the
-job runs; copy any custom settings from it into `Config.overrides.toml`.
+job runs; copy any custom settings from it into `Config.overrides.toml`, or let
+`docker compose run --rm config suggest` (`sbd migrate`) write them to `Config.overrides.toml.suggested`
+for review.
 
 The `[[events_observer]]` blocks follow the enabled services: the API observer only with the `api`
 profile, the signer observer only with `signer`. Any configured observer is a liveness dependency of the
@@ -28,20 +30,20 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 
 | Name                            | Description                                           | Default Value             |
 | ------------------------------- | ----------------------------------------------------- | ------------------------- |
-| `VERBOSE`                       | Enables verbose logging when `./manage.sh` is invoked | `false`                   |
+| `VERBOSE`                       | Enables verbose logging in the deprecated `./manage.sh` | `false`                 |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
-| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`. `./manage.sh` selects them with `-f` instead | `node,api` |
+| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it; the deprecated `./manage.sh` selects them with `-f` per run instead | `node,api` |
 | `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
 | `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
-| `METRICS_BIND_ADDR`             | Host address the node and signer metrics ports are published on | `127.0.0.1` |
-| `EXPOSE_POSTGRES`               | Publish postgres on the host (`compose.postgres-port.yaml`; with plain compose add it to `COMPOSE_FILE`) | `false` |
-| `POSTGRES_BIND_ADDR`            | Host address for the published postgres port      | `127.0.0.1`               |
-| `MONITORING_BIND`, `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md) | `127.0.0.1`, `9090`, `3000`, empty, `15d`, `1`, `1` |
+| `API_BIND_ADDR`, `RPC_BIND_ADDR` | Host address the API (3999) and the node RPC (20443) are published on. To serve the API to other machines, prefer the `proxy` profile | `127.0.0.1` |
+| `PROXY_BIND_ADDR`, `NGINX_PROXY_PORT`, `NGINX_PROXY_TLS_PORT` | The `proxy` profile (nginx), the way to serve the API to other machines | `0.0.0.0`, `80`, `443` |
+| `PROXY_TLS`, `PROXY_TLS_DIR`    | `1`: HTTPS on `NGINX_PROXY_TLS_PORT` with `fullchain.pem` and `privkey.pem` from `PROXY_TLS_DIR`; HTTP redirects to it | `0`, `./conf/nginx/tls` |
+| `POSTGRES_LOCAL`, `POSTGRES_LOCAL_PORT` | `1` publishes postgres on `127.0.0.1:POSTGRES_LOCAL_PORT` for local tools. It is never published beyond this host: only the API uses it | `0`, `5432` |
+| `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `PROMETHEUS_APP_SCRAPE_INTERVAL`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md). Always on 127.0.0.1 | `9090`, `3000`, empty, `30d`, `15s`, `1`, `1` |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |
 | `STACKS_SIGNER_VERSION`         | Stacks Signer Docker image version                    | `latest released version` |
 | `STACKS_BLOCKCHAIN_API_VERSION` | Stacks Blockchain API Docker image version            | `latest released version` |
 | `POSTGRES_VERSION`              | Postgres Docker image version                         | `14`                      |
-| `NGINX_PROXY_PORT`              | HTTP port for the nginx proxy                         | `80`                      |
 
 ### Stacks Signer Settings
 
@@ -77,7 +79,7 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `STACKS_CORE_RPC_HOST`       | FQDN of the Stacks Blockchain service for RPC proxy requests                                                | `stacks-blockchain`                        |
 | `STACKS_CORE_RPC_PORT`       | RPC port of the Stacks Blockchain service                                                                   | `20443`                                    |
 | `STACKS_CORE_P2P_PORT`       | P2P port of the Stacks Blockchain service                                                                   | `20444`                                    |
-| `API_OBSERVER_TIMEOUT_MS`    | Timeout (ms) for the node's event delivery to the API. The node retries a failed delivery with a backoff of up to 3x this value, so it also bounds how long the node stays blocked after the API comes back. Written to `timeout_ms` of the API `[[events_observer]]` in `Config.toml` on every start | `60000` |
+| `API_OBSERVER_TIMEOUT_MS`    | Timeout (ms) for the node's event delivery to the API. The node retries a failed delivery with a backoff of up to 3x this value, so it also bounds how long the node stays blocked after the API comes back. Written to `timeout_ms` of the API `[[events_observer]]` in `Config.toml` on every start. Measured on mainnet (2026-11): the genesis block takes the API about 38 s, every later block at most 12 s, so keep it at 60 s or more | `60000` |
 
 #### Options commented out by default
 

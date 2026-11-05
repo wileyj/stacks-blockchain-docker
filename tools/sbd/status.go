@@ -156,6 +156,12 @@ func Doctor(c *Ctx) []Check {
 	if checkNetwork(net) == nil {
 		checks = append(checks, diskChecks(c, profiles, c.Remote)...)
 	}
+	// Everything but P2P listens on this host only unless asked; say so when it isn't (owner, 2026-11-05)
+	for _, k := range []string{"API_BIND_ADDR", "RPC_BIND_ADDR"} {
+		if v := c.Value(k); v != "" && !isLoopback(v) {
+			add("warn", "exposure", fmt.Sprintf("%s=%s: reachable from other machines (the proxy profile is the supported way to serve the API)", k, v))
+		}
+	}
 	if out, err := c.Docker.Output([]string{"compose", "config", "--quiet"}); err != nil {
 		add("fail", "compose project", strings.TrimSpace(string(out))+" "+err.Error())
 	} else {
@@ -206,6 +212,10 @@ func doctorRun(c *Ctx, args []string) (int, error) {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+func isLoopback(addr string) bool {
+	return addr == "127.0.0.1" || addr == "::1" || addr == "localhost"
 }
 
 func anyIn(a, b []string) bool {

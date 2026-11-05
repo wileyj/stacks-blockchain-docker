@@ -406,6 +406,49 @@ Unit tests (run in the image build): Q24 selection (7 cases, plus never mixing d
 
 `manage.sh -a reset` keeps its existence and running checks and then runs the job; harness goldens for the two reset-with-data scenarios now show the `run --rm reset` call.
 
+### Phase 5 soak — Linux x64, started 2026-11-03 [V, in progress]
+
+Two scratch projects on the 3 TB LV, LAN BTC peer, frozen commits (`/stacks/temp/sbd-soak-{a,b}/COMMIT`), each with renamed containers and no published node/API ports. Both were run with `sbd` (start, stop, seed, env set, doctor). Collectors: `soak.csv`/`progress.csv` (heights, public tip, restarts, memory), and `newblock.csv` with every API `POST /new_block` response time and payload size.
+
+**Run A: mainnet `node,api,monitoring`, seeded from snapshot `20261103` (core 4.0.4, API 9.7.1 after the pin bump, pg17), NFT index deferred**
+
+| Step | Result |
+|---|---|
+| Seed, first attempt (`980516f`) | Download + verify 356 GiB, restore ran to the end, then **failed after 2 h 44 m**: the 20261103 dump carries `ALTER ROLE hirosystems IN DATABASE … SET search_path` (Hiro's role). With `--create`, pg_restore applies database properties whatever `--use-list` says (checked). Fixed in `2f5cb31`: the seed runs the dump's own `CREATE DATABASE` and restores without `--create` |
+| Seed, retry (`2f5cb31`) | **1 h 40 m** (5980 s) from the kept archives: verify 4 min, extraction about 25 min (264.5 GiB, in parallel), restore 1 h 35 m; API ready 31 s after `sbd start` |
+| Catch-up | 6031 blocks behind at boot, at the tip about 2 h later (01:08). The first ~35 min ran at **12–15 s per `/new_block`** (37 blocks): pg_restore leaves no planner statistics and autovacuum analyzes the big tables one by one. Fixed in `6f03efc`: the seed runs `vacuumdb --analyze-only` before handing over |
+| Manual `ANALYZE` (01:31, the same step) | Every large table but `nft_events` in about 3 s. `nft_events` waited 20.6 h behind the deferred `CREATE INDEX CONCURRENTLY`, and at 22:10 the two **deadlocked** (the build's last phase waits for older transactions, the ANALYZE waited for the build's lock): postgres cancelled the build after 21.8 h. `build-indexes` retried as designed (restart 1/5, dropped the invalid index, started over). The fixed seed analyzes before the stack starts, so it can't hit this; `build-indexes` now warns about it, and the docs say not to VACUUM/ANALYZE the table during the build |
+| Prepare phase (burn 974 650, 2026-11-05 09:04) | At the tip; lag ≤ 1 block; 0 restarts (node, API, postgres) |
+
+**Run B: mainnet genesis sync, `node,api`, 2026-11-03 23:11 → stopped 2026-11-05 15:51 after milestone 3 (Q26)**
+
+Heights per request come from matching its time against the minute samples (approximate).
+
+| Heights | `/new_block` | Max | p99 | Largest payload |
+|---|---|---|---|---|
+| 0 – 5k (genesis block 1: 330 442 events) | 5 443 | **37.8 s** | 0.09 s | 78 MB |
+| 5k – 132k | 137 127 | 1.9 s | 0.35 s | 0.3 MB |
+| 132k – 138.5k (Dec 2023: 7–10.8k txs per block) | 7 251 | **12.0 s** | 2.7 s | 7.5 MB |
+| 138.5k – 168.5k | 32 341 | 5.7 s | 0.88 s | 8.3 MB |
+| 168.5k – 169.5k (Oct 2024: 12–14.5k NFT mints per block) | 1 012 | 7.5 s | 4.6 s | 2.6 MB |
+| 169.5k – 200k | 30 196 | 2.4 s | 0.21 s | 3.4 MB |
+| 200k – 334.5k | 133 735 | 5.0 s | 0.10 s | 4.0 MB |
+
+All 347 105 deliveries returned 200; the node logged no delivery retries; 0 restarts. Milestones: 5k within the first hour, **138 010 at 24.7 h**, **169 311 at 35.1 h**, then about 30 000 blocks/h (334 506 at 40.7 h). `sbd stop` took 36 s. Heaviest blocks were found with queries on Run A's restored database (top NFT-mint blocks 168 743–169 203; top transaction counts 132 366–137 843).
+
+**Q26 resolved:** the 60 s API observer timeout holds across history; the worst case is the genesis block at 37.8 s (63%), the next 12.0 s.
+
+### Phase 4 first release — GitHub Actions, 2026-11-02 [V]
+
+Signed tag `v0.1.0-rc.1` on `152c3ea` (PR #6 merged), pushed with an explicit refspec. `release.yaml` run 41523724767: `build sbd binaries`, `publish the GitHub Release`, `publish the sbd image (linux/amd64)` all succeeded.
+
+| Check | Result |
+|---|---|
+| Release | prerelease; assets `sbd-v0.1.0-rc.1-linux-amd64` (2.8 MB) and `SHA256SUMS` |
+| Download | `sha256sum -c SHA256SUMS` OK; `./sbd-v0.1.0-rc.1-linux-amd64 version` → `sbd v0.1.0-rc.1` |
+| Image | `ghcr.io/wileyj/sbd:v0.1.0-rc.1`, amd64, `org.opencontainers.image.source` set; anonymous registry token + manifest: 200 (public); `docker run … version` → `sbd v0.1.0-rc.1` |
+| `latest` | not created (prerelease), as designed |
+
 ### Phase 3d pg-upgrade job — Linux x64, 2026-11-02 [V]
 
 `docker compose run --rm -T pg-upgrade …` in project `sbd-pgu`, data on the XFS LV (reflink). Source clusters were made the way the stack's postgres makes them (`postgres:16-alpine`, then `postgres:17-alpine`): 500 000 rows with mixed-case/punctuated text, two B-tree indexes on them, a second database owned by a password-authenticated role.

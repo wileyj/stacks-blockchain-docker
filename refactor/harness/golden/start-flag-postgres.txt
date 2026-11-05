@@ -12,7 +12,7 @@ Starting all services for stacks-blockchain
 --- docker calls:
   docker compose -f <REPO>/compose.yaml --profile * ps -q
   docker ps -q --filter label=com.docker.compose.project=compose-files
-  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml -f <REPO>/compose.postgres-port.yaml --profile node --profile api up -d
+  docker compose --env-file <REPO>/.env -f <REPO>/compose.yaml --profile node --profile api up -d
 --- filesystem side effects:
   + ./.env.save
   + ./persistent-data

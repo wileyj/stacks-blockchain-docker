@@ -65,3 +65,28 @@ func TestRecordDeferredSQL(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateDatabaseStatement(t *testing.T) {
+	script := "--\n-- Name: stacks_blockchain_api; Type: DATABASE\n--\n\n" +
+		"CREATE DATABASE stacks_blockchain_api WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.UTF-8';\n\n" +
+		"\\connect stacks_blockchain_api\n\nALTER DATABASE stacks_blockchain_api SET search_path TO 'stacks_blockchain_api', 'public';\n" +
+		"ALTER ROLE hirosystems IN DATABASE stacks_blockchain_api SET search_path TO 'stacks_blockchain_api', 'public';\n"
+	got, err := CreateDatabaseStatement(script)
+	want := "CREATE DATABASE stacks_blockchain_api WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.UTF-8';"
+	if err != nil || got != want {
+		t.Errorf("got %q, %v", got, err)
+	}
+	if _, err := CreateDatabaseStatement("CREATE DATABASE other;\n"); err == nil {
+		t.Errorf("a dump of another database must fail")
+	}
+}
+
+func TestOnTable(t *testing.T) {
+	def := `CREATE INDEX nft_events_asset_identifier_index ON "public".nft_events USING hash (asset_identifier) WHERE (asset_event_type_id = 2);`
+	if got := onTable(def); got != `"public".nft_events` {
+		t.Errorf("onTable = %q", got)
+	}
+	if got := onTable("garbage"); got != "" {
+		t.Errorf("no table: %q", got)
+	}
+}

@@ -45,6 +45,16 @@ services:
       - API_EVENT_ENDPOINT
       - API_OBSERVER_TIMEOUT_MS
       - MONITORING_CONTAINER_METRICS
+      - PROMETHEUS_APP_SCRAPE_INTERVAL
+      ## The proxy profile's nginx config (conf/nginx/proxy.conf); POSTGRES_LOCAL is validated (0 or 1)
+      - STACKS_BLOCKCHAIN_API_PORT
+      - PROXY_TLS
+      - POSTGRES_LOCAL
+      ## Grafana alerting: the job only checks that a contact point is set; Grafana reads the values
+      - MONITORING_ALERTS
+      - MONITORING_GRAFANA
+      - GRAFANA_ALERT_WEBHOOK_URL
+      - GRAFANA_ALERT_EMAIL
     volumes:
       - ./conf:/conf
 
@@ -71,6 +81,8 @@ services:
       config:
         condition: service_completed_successfully
 
+  ## Reachable only inside the stack: the API is its only client (owner, 2026-11-05). Admin access:
+  ## docker compose exec postgres psql -U postgres, or POSTGRES_LOCAL=1 (postgres-local below)
   postgres:
     image: postgres:${POSTGRES_VERSION:-17}-alpine
     container_name: postgres
@@ -103,8 +115,9 @@ services:
     restart: always
     profiles: [api]
     command: ["npm", "run", "start"]
+    ## This host only by default; serve the API to other machines with the proxy profile
     ports:
-      - ${STACKS_BLOCKCHAIN_API_PORT:-3999}:${STACKS_BLOCKCHAIN_API_PORT:-3999}
+      - ${API_BIND_ADDR:-127.0.0.1}:${STACKS_BLOCKCHAIN_API_PORT:-3999}:${STACKS_BLOCKCHAIN_API_PORT:-3999}
     ## STACKS_CHAIN_ID per network
     env_file:
       - ./conf/${NETWORK:-mainnet}/api.env
@@ -150,10 +163,12 @@ services:
     command: ["/bin/stacks-node", "start", "--config", "/src/stacks-blockchain/Config.toml"]
     ## Let the run loop finish: killing it early can corrupt the chainstate
     stop_grace_period: ${STACKS_SHUTDOWN_TIMEOUT:-1200}s
+    ## RPC: this host only by default (the API, and so the proxy, serve /v2/* too). P2P: public, for
+    ## inbound peers. Metrics: this host only, always
     ports:
-      - ${STACKS_CORE_RPC_PORT:-20443}:${STACKS_CORE_RPC_PORT:-20443}
+      - ${RPC_BIND_ADDR:-127.0.0.1}:${STACKS_CORE_RPC_PORT:-20443}:${STACKS_CORE_RPC_PORT:-20443}
       - ${STACKS_CORE_P2P_PORT:-20444}:${STACKS_CORE_P2P_PORT:-20444}
-      - ${METRICS_BIND_ADDR:-127.0.0.1}:${NODE_METRICS_PORT:-9153}:${NODE_METRICS_PORT:-9153}
+      - 127.0.0.1:${NODE_METRICS_PORT:-9153}:${NODE_METRICS_PORT:-9153}
     environment:
       - RUST_BACKTRACE
       - STACKS_LOG_DEBUG
@@ -196,7 +211,7 @@ services:
     profiles: [signer]
     command: ["/bin/stacks-signer", "run", "--config", "/src/stacks-signer/Signer.toml"]
     ports:
-      - ${METRICS_BIND_ADDR:-127.0.0.1}:${SIGNER_METRICS_PORT:-9154}:${SIGNER_METRICS_PORT:-9154}
+      - 127.0.0.1:${SIGNER_METRICS_PORT:-9154}:${SIGNER_METRICS_PORT:-9154}
     volumes:
       - ./conf/${NETWORK:-mainnet}:/src/stacks-signer:ro
       - ${SIGNER_DATA_DIR:-${DATA_ROOT:-./persistent-data}/${NETWORK:-mainnet}/stacks-signer}:/root/stacks-signer/data
@@ -211,23 +226,49 @@ services:
       signer-config-check:
         condition: service_completed_successfully
 
+  ## The way to serve the API to other machines: public on PROXY_BIND_ADDR (default all interfaces).
+  ## PROXY_TLS=1: HTTPS on 443 with fullchain.pem/privkey.pem from PROXY_TLS_DIR, HTTP redirects.
+  ## The config job renders conf/nginx/proxy.conf
   nginx:
-    image: nginx:alpine
+    image: nginx:${NGINX_VERSION:-1.30.5-alpine}
     container_name: nginx
     restart: on-failure
     profiles: [proxy]
     ports:
-      - ${NGINX_PROXY_PORT:-80}:80
+      - ${PROXY_BIND_ADDR:-0.0.0.0}:${NGINX_PROXY_PORT:-80}:80
+      - ${PROXY_BIND_ADDR:-0.0.0.0}:${NGINX_PROXY_TLS_PORT:-443}:443
     volumes:
-      - ./conf/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./conf/nginx/proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${PROXY_TLS_DIR:-./conf/nginx/tls}:/etc/nginx/tls:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/status"]
       interval: 30s
       timeout: 5s
       retries: 3
     depends_on:
+      config:
+        condition: service_completed_successfully
       stacks-blockchain-api:
         condition: service_started
+        required: false
+
+  ## POSTGRES_LOCAL=1 publishes postgres on 127.0.0.1:POSTGRES_LOCAL_PORT for local tools. Never on
+  ## another address: there is no setting for one
+  postgres-local:
+    image: nginx:${NGINX_VERSION:-1.30.5-alpine}
+    container_name: postgres-local
+    restart: on-failure
+    profiles: [api]
+    deploy:
+      replicas: ${POSTGRES_LOCAL:-0}
+    ports:
+      - 127.0.0.1:${POSTGRES_LOCAL_PORT:-5432}:5432
+    command: ["nginx", "-c", "/etc/nginx/postgres-local.conf", "-g", "daemon off;"]
+    volumes:
+      - ./conf/nginx/postgres-local.conf:/etc/nginx/postgres-local.conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
         required: false
 
   ## Seed the node + API from a Hiro archive snapshot (refactor/14 §9), with the stack stopped:
@@ -346,7 +387,8 @@ services:
 
   ## ---------------------------------------------------------------------------------------------
   ## monitoring profile (refactor/12): Prometheus + exporters + Grafana. Opt in by adding `monitoring`
-  ## to COMPOSE_PROFILES. Ports bind to MONITORING_BIND (127.0.0.1); only explicit environment is passed.
+  ## to COMPOSE_PROFILES. Ports bind to 127.0.0.1 only, always (never exposed externally); only explicit
+  ## environment is passed.
   ## The scrape targets in conf/monitoring/prometheus.yml are rendered by the config job.
   prometheus:
     image: prom/prometheus:${PROMETHEUS_VERSION:-v3.15.0}
@@ -356,9 +398,9 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
     ports:
-      - ${MONITORING_BIND:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090
+      - 127.0.0.1:${PROMETHEUS_PORT:-9090}:9090
     volumes:
       - ./conf/monitoring:/etc/prometheus:ro
       - prometheus-data:/prometheus
@@ -390,7 +432,8 @@ services:
       - --housekeeping_interval=30s
       - --store_container_labels=false
       - --whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project
-      - --disable_metrics=percpu,sched,tcp,udp,disk,hugetlb,referenced_memory,cpu_topology,resctrl,advtcp,memory_numa,process
+      ## Only what the dashboards use (Prometheus keeps a matching keep-list, tools/config/monitoring.go)
+      - --enable_metrics=cpu,memory,diskIO,network,oom_event
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -408,6 +451,15 @@ services:
     command:
       - --path.rootfs=/host
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+      ## Only the collectors the dashboards use (Prometheus keeps a matching keep-list)
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.diskstats
+      - --collector.filesystem
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.netdev
+      - --collector.stat
     volumes:
       - /:/host:ro
 
@@ -421,6 +473,18 @@ services:
       - DATA_SOURCE_URI=${PG_HOST:-postgres}:${PG_PORT:-5432}/${PG_DATABASE:-postgres}?sslmode=disable
       - DATA_SOURCE_USER=${PG_USER:-postgres}
       - DATA_SOURCE_PASS=${PG_PASSWORD:-postgres}
+    ## Database-level metrics only: the per-table collectors were 2 200 series nothing used, queried
+    ## from the API database on every scrape. Prometheus keeps a matching keep-list
+    command:
+      - --no-collector.stat_user_tables
+      - --no-collector.statio_user_tables
+      - --no-collector.stat_bgwriter
+      - --no-collector.replication
+      - --no-collector.replication_slots
+      - --no-collector.roles
+      - --no-collector.wal
+      - --collector.long_running_transactions
+      - --no-collector.settings
     depends_on:
       postgres:
         condition: service_healthy
@@ -436,13 +500,21 @@ services:
     deploy:
       replicas: ${MONITORING_GRAFANA:-1}
     ports:
-      - ${MONITORING_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000
+      - 127.0.0.1:${GRAFANA_PORT:-3000}:3000
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      ## Alerting (MONITORING_ALERTS=1): the provisioned contact point reads these when Grafana starts
+      - GRAFANA_ALERT_WEBHOOK_URL=${GRAFANA_ALERT_WEBHOOK_URL:-}
+      - GRAFANA_ALERT_EMAIL=${GRAFANA_ALERT_EMAIL:-}
+      - GF_SMTP_ENABLED=${GRAFANA_SMTP_HOST:+true}
+      - GF_SMTP_HOST=${GRAFANA_SMTP_HOST:-}
+      - GF_SMTP_USER=${GRAFANA_SMTP_USER:-}
+      - GF_SMTP_PASSWORD=${GRAFANA_SMTP_PASSWORD:-}
+      - GF_SMTP_FROM_ADDRESS=${GRAFANA_SMTP_FROM:-}
     entrypoint:
       - /bin/sh
       - -c

@@ -1,6 +1,7 @@
 # Workarounds to potential issues
 
-## Error message
+`sbd doctor` checks the most common causes up front: the Compose version, the Docker daemon, `.env`,
+disk space at the data location, memory, and services left running outside `COMPOSE_PROFILES`.
 
 ## Postgres error: No Space left on device
 
@@ -19,8 +20,8 @@ pq: could not resize shared memory segment "/PostgreSQL.2058389254" to 12615680 
 
 The API (9.x) imports the legacy BNS v1 data by itself during a sync **from genesis**, when
 `BNS_IMPORT_DIR` is uncommented in `.env` and the files are present: download them first with
-`./manage.sh bns` (or `docker compose --profile bns up`). A node seeded from a Hiro archive snapshot
-already contains the BNS data, so this only matters for genesis syncs.
+`docker compose run --rm bns` (or `sbd bns`). A node seeded from a Hiro archive snapshot already
+contains the BNS data, so this only matters for genesis syncs.
 
 ## Port(s) already in use
 
@@ -56,38 +57,31 @@ docker compose up -d
 
 ## Missing bit_xor
 
-If the `stacks-blockchain-api` emits an error like the following: \
-`stacks-blockchain-api    | {"level":"error","message":"Error executing:\nSELECT bit_xor(1)\n       ^^^^\n\nfunction bit_xor(integer) does not exist\n","timestamp":"2022-08-23T15:40:56.929Z"}` \
-The postgres instance will need to be upgraded from version `13` to >= `14` (postgres 14 has _bit_xor_ enabled by default). \
-There is a script that will attempt to upgrade the database from 13 -> 14 at [`./scripts/postgres_upgrade.sh`](../scripts/postgres_upgrade.sh).
-
-### Attempt to upgrade the postgres data
-
-```bash
-$ ./manage.sh -n mainnet -a stop
-$ ./scripts/postgres_upgrade.sh
-$ ./manage.sh -n mainnet -a start
-```
-
-## Database Issues
-
-For any of the various Postgres/sync issues, it may be easier to simply remove the persistent data dir and resync from genesis. \
-The most common Postgres issue looks like: `Error: DB does not contain a parent block at height xxxxx`
-
-```bash
-$ ./manage.sh -n <network> -a stop
-$ sudo ./manage.sh -n <network> -a reset
-$ ./manage.sh -n <network> -a start
-```
-
-**Alternatively** you can use the script `./scripts/seed-chainstate.sh` to attempt to use a public archive of the data. \
-_Mainnet needs about 400GB free for the downloads (set `SEED_DOWNLOAD_DIR` to use another volume) plus room for the extracted data, and it takes a long while to complete_. \
-The script picks the newest snapshot pair (chainstate + API dump from the same date) that matches the versions in `.env`, shows the plan and asks before deleting existing data. Nothing is deleted until both files are downloaded and verified.
+If the `stacks-blockchain-api` logs `function bit_xor(integer) does not exist`, its database is
+PostgreSQL 13, which the API no longer supports. The `pg-upgrade` job upgrades from 16 and later only,
+so re-seed the database (and the chainstate) from a Hiro archive snapshot instead:
 
 ```bash
 docker compose --profile '*' down
-docker compose run --rm seed --dry-run   # show the selected snapshot and plan, change nothing
-docker compose run --rm seed             # add --yes (or CONFIRM=yes) to skip the confirmation
+docker compose run --rm seed
+docker compose up -d
 ```
 
-The older `sudo ./scripts/seed-chainstate.sh [--dry-run] [--yes]` still works the same way.
+## Database issues
+
+For the various postgres/sync issues, it may be easier to delete this network's data and resync, from
+genesis or from a Hiro archive snapshot. The most common one looks like
+`Error: DB does not contain a parent block at height xxxxx`.
+
+```bash
+docker compose --profile '*' down
+docker compose run --rm reset             # then a genesis sync on the next start, or:
+docker compose run --rm seed --dry-run    # the snapshot pair (chainstate + API dump of one date) it would use
+docker compose run --rm seed              # asks before replacing data; --yes (or CONFIRM=yes) to skip
+docker compose up -d
+# sbd: sbd stop && sbd reset (or sbd seed) && sbd start
+```
+
+The seed needs room for the downloaded archives (about 360 GB for mainnet; set `SEED_DOWNLOAD_DIR` to
+use another volume) plus the restored data; see [Requirements](./requirements.md). Nothing is replaced
+until both files are downloaded, verified and restored.

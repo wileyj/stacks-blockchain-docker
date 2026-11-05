@@ -31,21 +31,19 @@ sudo apt-get install docker-compose-plugin
 
 The Docker daemon always runs as the root user so you will need root privileges to interact with it.
 
-The script `manage.sh` uses docker, so to avoid the requirement of needing to run the script with root privileges it is prefered to be able to _manage Docker as a non-root user_ by following [these steps](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user).
-
-This will avoid the need of running the script with root privileges for all operations **except** the removal of data.
+To run `docker compose` (and `sbd`) without `sudo`, _manage Docker as a non-root user_ by following
+[these steps](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user).
+Membership in the `docker` group is equivalent to root on that host. Nothing in this repo needs `sudo`
+otherwise: deleting, seeding and upgrading data run in containers.
 
 ## Debian based install
 
-Copy/paste the following _should_ work to get docker and other requirements setup on a Debian based host
+Copy/paste the following _should_ work to get Docker Engine with the Compose plugin and git on a
+Debian based host (see [Docker's instructions](https://docs.docker.com/engine/install/debian/) for
+others):
 
 ```bash
-sudo apt-get update && sudo apt-get install -y git jq sed curl
-sudo apt remove docker-desktop
-rm -r $HOME/.docker/desktop
-sudo rm /usr/local/bin/com.docker.cli
-sudo apt purge docker-desktop
-sudo apt-get update
+sudo apt-get update && sudo apt-get install -y git curl
 sudo apt-get install -y ca-certificates     curl     gnupg     lsb-release
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg

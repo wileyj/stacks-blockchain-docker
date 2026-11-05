@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,5 +72,83 @@ func TestRunWritesPrometheusOnlyWithMonitoring(t *testing.T) {
 		if strings.Contains(profiles, "monitoring") != (err == nil) {
 			t.Errorf("%s: prometheus.yml written=%v", profiles, err == nil)
 		}
+	}
+}
+
+func TestAppScrapeIntervalAndKeepLists(t *testing.T) {
+	kv := baseEnv("mainnet", "node,api,signer,monitoring")
+	s, err := SettingsFromEnv(env(kv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(RenderPrometheus(s))
+	if !strings.Contains(out, "global:\n  scrape_interval: 30s\n  evaluation_interval: 30s\n") {
+		t.Errorf("infrastructure jobs and rules stay at 30 s:\n%s", out)
+	}
+	for _, job := range []string{"stacks-node", "stacks-api", "stacks-signer"} {
+		if !strings.Contains(out, "- job_name: "+job+"\n    scrape_interval: 15s\n") {
+			t.Errorf("%s must use the default app interval 15s:\n%s", job, out)
+		}
+	}
+	for _, job := range []string{"prometheus", "node-exporter", "cadvisor", "postgres"} {
+		block := out[strings.Index(out, "- job_name: "+job+"\n"):]
+		if next := strings.Index(block[1:], "- job_name:"); next > 0 {
+			block = block[:next+1]
+		}
+		if strings.Contains(block, "scrape_interval") || !strings.Contains(block, "action: keep") {
+			t.Errorf("%s: fixed 30 s and a keep-list expected:\n%s", job, block)
+		}
+	}
+	if strings.Count(out, "action: keep") != 4 {
+		t.Errorf("only the 4 infrastructure jobs are filtered:\n%s", out)
+	}
+
+	kv["PROMETHEUS_APP_SCRAPE_INTERVAL"] = "5s"
+	s, _ = SettingsFromEnv(env(kv))
+	if !strings.Contains(string(RenderPrometheus(s)), "- job_name: stacks-api\n    scrape_interval: 5s\n") {
+		t.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must reach the app jobs")
+	}
+	for _, bad := range []string{"15", "0s", "fast", "15 s"} {
+		kv["PROMETHEUS_APP_SCRAPE_INTERVAL"] = bad
+		if _, err := SettingsFromEnv(env(kv)); err == nil {
+			t.Errorf("%q must be refused", bad)
+		}
+	}
+}
+
+// Every infrastructure metric a rule or dashboard panel uses must survive its job's keep-list.
+func TestKeepListsCoverRulesAndDashboards(t *testing.T) {
+	text, err := os.ReadFile(filepath.Join(repoConf, "monitoring", "rules", "stacks.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboards, _ := filepath.Glob(filepath.Join(repoConf, "monitoring", "grafana", "dashboards", "*.json"))
+	if len(dashboards) == 0 {
+		t.Fatal("no dashboards found")
+	}
+	for _, f := range dashboards {
+		b, _ := os.ReadFile(f)
+		text = append(text, b...)
+	}
+	lists := map[string][]string{"prometheus_": keepPrometheus, "process_": keepPrometheus, "node_": keepNodeExporter,
+		"container_": keepCadvisor, "machine_": keepCadvisor, "pg_": keepPostgres}
+	seen := 0
+	// Not after ':' (the tail of a recording rule such as stacks:node_tip_height); container_label_* are labels
+	for _, m := range regexp.MustCompile(`(?:^|[^:a-zA-Z0-9_])((?:prometheus|process|node|container|machine|pg)_[a-zA-Z0-9_]+)`).FindAllStringSubmatch(string(text), -1) {
+		tok := m[1]
+		if strings.HasPrefix(tok, "node_exporter") || strings.HasPrefix(tok, "container_label_") {
+			continue
+		}
+		for prefix, keep := range lists {
+			if strings.HasPrefix(tok, prefix) {
+				seen++
+				if !slices.Contains(keep, tok) {
+					t.Errorf("%s is used by a rule or dashboard but dropped by the %s keep-list", tok, prefix)
+				}
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("found no infrastructure metrics in the rules and dashboards: the test isn't reading them")
 	}
 }

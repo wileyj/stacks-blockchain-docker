@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,7 +34,16 @@ type Settings struct {
 	SignerKey            string
 	// ContainerMetrics: cAdvisor runs with the monitoring profile (MONITORING_CONTAINER_METRICS=1)
 	ContainerMetrics bool
+	// AppScrapeInterval: how often Prometheus scrapes the node, API and signer (a Prometheus duration)
+	AppScrapeInterval string
+	// Grafana alerting (MONITORING_ALERTS=1) and which contact points are configured
+	Alerts, AlertWebhook, AlertEmail bool
+	// The proxy profile: the API's port inside the network, and HTTPS (PROXY_TLS=1)
+	APIPort  string
+	ProxyTLS bool
 }
+
+var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
 
 // SettingsFromEnv reads and validates the settings. Empty values keep the template's value.
 func SettingsFromEnv(getenv func(string) string) (Settings, error) {
@@ -76,6 +86,38 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	s.APIEventEndpoint = orDefault(getenv("API_EVENT_ENDPOINT"),
 		"stacks-blockchain-api:"+orDefault(getenv("STACKS_CORE_EVENT_PORT"), "3700"))
 	s.APIObserverTimeoutMS = orDefault(getenv("API_OBSERVER_TIMEOUT_MS"), "60000")
+	s.AppScrapeInterval = orDefault(strings.TrimSpace(getenv("PROMETHEUS_APP_SCRAPE_INTERVAL")), "15s")
+	if !durationRe.MatchString(s.AppScrapeInterval) {
+		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
+	}
+	s.APIPort = orDefault(getenv("STACKS_BLOCKCHAIN_API_PORT"), "3999")
+	switch v := orDefault(getenv("PROXY_TLS"), "0"); v {
+	case "1":
+		s.ProxyTLS = true
+	case "0":
+	default:
+		return s, fmt.Errorf("PROXY_TLS must be 0 or 1, got %q", v)
+	}
+	if v := orDefault(getenv("POSTGRES_LOCAL"), "0"); v != "0" && v != "1" {
+		return s, fmt.Errorf("POSTGRES_LOCAL must be 0 or 1, got %q", v)
+	}
+	switch v := orDefault(getenv("MONITORING_ALERTS"), "0"); v {
+	case "1":
+		s.Alerts = true
+	case "0":
+	default:
+		return s, fmt.Errorf("MONITORING_ALERTS must be 0 or 1, got %q", v)
+	}
+	s.AlertWebhook = strings.TrimSpace(getenv("GRAFANA_ALERT_WEBHOOK_URL")) != ""
+	s.AlertEmail = strings.TrimSpace(getenv("GRAFANA_ALERT_EMAIL")) != ""
+	if s.Alerts && s.Profiles["monitoring"] {
+		if orDefault(getenv("MONITORING_GRAFANA"), "1") == "0" {
+			return s, fmt.Errorf("MONITORING_ALERTS=1 sends alerts through Grafana: set MONITORING_GRAFANA=1 (or MONITORING_ALERTS=0)")
+		}
+		if !s.AlertWebhook && !s.AlertEmail {
+			return s, fmt.Errorf("MONITORING_ALERTS=1 needs a contact point: set GRAFANA_ALERT_WEBHOOK_URL and/or GRAFANA_ALERT_EMAIL (with GRAFANA_SMTP_* for email)")
+		}
+	}
 	switch v := orDefault(getenv("MONITORING_CONTAINER_METRICS"), "1"); v {
 	case "1":
 		s.ContainerMetrics = true
@@ -88,6 +130,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		btc + "RPC_PORT": s.BTCRPCPort, btc + "P2P_PORT": s.BTCP2PPort, "NODE_METRICS_PORT": s.NodeMetricsPort,
 		"STACKS_SIGNER_PORT": s.SignerPort, "SIGNER_METRICS_PORT": s.SignerMetricsPort,
 		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
+		"STACKS_BLOCKCHAIN_API_PORT": s.APIPort,
 	} {
 		if v != "" {
 			if _, err := strconv.ParseUint(v, 10, 32); err != nil {

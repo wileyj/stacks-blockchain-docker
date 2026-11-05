@@ -14,7 +14,7 @@ COMPOSE_PROFILES=node,api,monitoring
 
 ```bash
 docker compose up -d
-# or: ./manage.sh -n mainnet -a start -f monitoring
+# or: sbd start --with monitoring
 ```
 
 | Service | URL (from the host) | |
@@ -22,8 +22,8 @@ docker compose up -d
 | Grafana | http://127.0.0.1:3000 (`GRAFANA_PORT`) | user `admin`, password `GRAFANA_ADMIN_PASSWORD` |
 | Prometheus | http://127.0.0.1:9090 (`PROMETHEUS_PORT`) | targets, rules and alerts |
 
-Both listen on `MONITORING_BIND` (default `127.0.0.1`). To reach them from another machine, prefer an
-SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`) over binding them to a public address.
+Both listen on 127.0.0.1 only, as do the node and signer metrics ports: monitoring is never published
+beyond this host. From another machine, use an SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`).
 
 ## What's collected
 
@@ -37,7 +37,7 @@ SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`) over binding them to a public a
 | node-exporter | host disk space, memory, load, I/O |
 
 Scrape targets follow `COMPOSE_PROFILES`: the `config` job renders `conf/monitoring/prometheus.yml`, so a
-disabled service never shows as a down target. Prometheus keeps `PROMETHEUS_RETENTION` (default 15 days)
+disabled service never shows as a down target. Prometheus keeps `PROMETHEUS_RETENTION` (default 30 days)
 of data in the `prometheus-data` volume; Grafana's state is in `grafana-data`. `docker compose down -v`
 removes both.
 
@@ -58,6 +58,7 @@ and alerts, visible under Prometheus → Alerts and on the Stacks node dashboard
 | Alert | Fires when |
 |---|---|
 | `StacksTipStalled` | no new Stacks block for 35 min while the node has peers |
+| `StacksBurnchainStalled` | the burn (Bitcoin) height hasn't changed for 2.5 h (Bitcoin gaps of 60–90 min are routine; a node catching up from a snapshot can also hold it) |
 | `StacksNoPeers` | no outbound peers for 15 min |
 | `StacksApiBehindNode` / `StacksSignerBehindNode` | API more than 10 blocks behind for 10 min / signer more than 5 for 15 min |
 | `StacksSignerRejecting` | the signer rejects more than half of the proposals for 30 min |
@@ -65,7 +66,24 @@ and alerts, visible under Prometheus → Alerts and on the Stacks node dashboard
 | `ContainerRestarting`, `ContainerMemoryHigh` | a stack container restarts repeatedly / uses over 90% of host memory |
 | `HostDiskSpaceLow` | a filesystem has less than 10% free |
 
-No notifications are sent yet (no Alertmanager). The thresholds are starting points.
+The thresholds are starting points, tuned on the mainnet soak.
+
+### Notifications (Grafana alerting, off by default)
+
+With `MONITORING_ALERTS=1`, Grafana evaluates the same alerts and sends them to a webhook and/or email.
+The config job generates Grafana's alert rules from `stacks.yml` on every start, so the alert
+expressions are defined (and tested with promtool) in one place; Grafana's own evaluation and delivery
+are not covered by those tests.
+
+```bash
+MONITORING_ALERTS=1
+GRAFANA_ALERT_WEBHOOK_URL=https://ntfy.sh/<topic>   # any webhook receiver: ntfy, Matrix/Discord bridges, an incident tool
+GRAFANA_ALERT_EMAIL=ops@example.org                 # with GRAFANA_SMTP_HOST (host:port), _USER, _PASSWORD, _FROM
+```
+
+Without a contact point (or with `MONITORING_GRAFANA=0`) the config job refuses to start the stack.
+The rules show in Grafana under Alerting, in the "Stacks" folder; notifications are grouped by alert
+and job and repeat every 4 hours while firing. `MONITORING_ALERTS=0` removes them on the next `up`.
 
 ## Options
 
@@ -73,7 +91,9 @@ No notifications are sent yet (no Alertmanager). The thresholds are starting poi
 |---|---|---|
 | `MONITORING_GRAFANA` | `1` | `0` runs without Grafana (Prometheus only) |
 | `MONITORING_CONTAINER_METRICS` | `1` | `0` skips cAdvisor, which needs privileged mode and host mounts |
-| `PROMETHEUS_RETENTION` | `15d` | how long Prometheus keeps data |
+| `PROMETHEUS_RETENTION` | `30d` | how long Prometheus keeps data |
+| `MONITORING_ALERTS` | `0` | `1` sends alert notifications through Grafana (see above) |
+| `PROMETHEUS_APP_SCRAPE_INTERVAL` | `15s` | how often the node, API and signer are scraped; the infrastructure exporters (host, containers, postgres, Prometheus) stay at 30 s. Applied on the next `up` |
 | `*_VERSION` | see `sample.env` | image pins for Prometheus, Grafana, cAdvisor and the exporters |
 
 The switches take `0` or `1` (not `true`/`false`).

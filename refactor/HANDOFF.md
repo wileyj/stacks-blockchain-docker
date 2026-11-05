@@ -163,9 +163,9 @@ Verified live (15 "Phase 2M"). Docs: `docs/monitoring.md`.
 - cAdvisor is v0.55.1 (v0.52.1 sees no containers on Docker 29).
 
 **Not done:**
-- Alertmanager (M5, later);
+- ~~Alertmanager (M5, later);~~ **done 2026-11-05 with Grafana alerting** (owner: Grafana for standardization; off by default; promtool can't test Grafana's evaluation, acknowledged). `MONITORING_ALERTS=1` makes the config job generate `conf/monitoring/grafana/provisioning/alerting/stacks.json` from the alert rules in `stacks.yml` (one source, still promtool-tested): one Grafana rule per alert (query A = the expression, B = `$A == $A`, same `for`, labels, annotations with `$value` → `$values.A.Value`), a contact point with the configured receivers (`GRAFANA_ALERT_WEBHOOK_URL`, `GRAFANA_ALERT_EMAIL` + `GRAFANA_SMTP_*`, referenced as `$__env{...}` so no secret is in the file), and a policy grouping by alertname/job, repeat 4 h. Refuses without a contact point or with `MONITORING_GRAFANA=0`; `MONITORING_ALERTS=0` removes the file. Verified live (testnet scratch + a webhook receiver): all 10 rules healthy, `StacksTargetDown` went pending during header sync and was delivered 15 min later with labels and templates expanded; rule errors are notified too (`DatasourceError`). Found: Grafana expands only `$__env{...}` in alerting files and keeps `$$` literally;
 - the `stacks-status` companion (M3, deferred);
-- a burn-height/"behind Bitcoin" alert (needs a reference);
+- ~~a burn-height/"behind Bitcoin" alert (needs a reference);~~ **done 2026-11-05:** `StacksBurnchainStalled`, no burn-height change for 2 h (with 2 h of history, so restarts don't trigger it) plus 30 min. No external reference: the soak saw routine gaps up to 92 min, and replaying 2 days of Run A it never went pending;
 - an event-age alert (the units of `stacks_last_event_timestamps` aren't verified);
 - trimming the collected series (M7, below).
 
@@ -244,15 +244,25 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
-## Phase 4: release pipeline (2026-11-02, in progress)
+## Phase 5: soak (started 2026-11-03, in progress)
+
+Owner, 2026-11-03: a 7-day Run A, then review; a genesis-sync Run B only until past the heavy blocks (Q26), not for days. Details in 15 "Phase 5".
+- **Run A** (`/stacks/temp/sbd-soak-a`, mainnet node,api,monitoring, snapshot 20261103, `2f5cb31`): at the tip since 2026-11-04 01:08; through the prepare phase at lag ≤ 1, 0 restarts. Still to come: cycle 147 (burn 974 750, about 2026-11-06 03:30), a graceful restart and a 15-min API outage after it, the 7-day report (2026-11-10). The deferred NFT index is rebuilding after the deadlock (below).
+- **Run B** (`/stacks/temp/sbd-soak-b`, genesis sync): stopped after milestone 3 at height 334 506. **Q26 resolved**: genesis block 37.8 s, everything after ≤ 12 s, all 347 105 deliveries 200. Data kept until the owner decides.
+- **Fixed from the soak:** `2f5cb31` seed restores without `pg_restore --create` (the 20261103 dump's `ALTER ROLE hirosystems IN DATABASE`); `6f03efc` seed runs `vacuumdb --analyze-only` (12–15 s per `/new_block` without statistics); `build-indexes` warns not to VACUUM/ANALYZE the table during the build (a manual ANALYZE deadlocked the build after 21.8 h; the retry worked as designed); `sbd` hides secret values; API pin 9.7.1 (`980516f`; the snapshots since 20261027 are 9.7.1).
+- **Owner, 2026-11-03:** the job images (config, seed, pg-upgrade) are always built locally by compose, for security; they are not published.
+
+## Phase 4: release pipeline and docs (2026-11-02)
 
 Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (release publishing only; still no branch-pushing or PR-opening jobs).
 - **Linux x86-64 only for now (owner, 2026-11-02).** The code builds for darwin, windows, freebsd and arm64 too (checked locally); adding targets later means extending the target list in `release.yaml`, an arm64 runner for the image, and a macOS/Windows test job in CI (drafted and dropped on 2026-11-02).
 - **`.github/workflows/release.yaml`**, on a pushed `v*` tag only: `binaries` (vet, test, `linux/amd64` with `-X main.version=<tag>`, `SHA256SUMS`, artifact) → `github-release` (`contents: write`; `gh release create --verify-tag --generate-notes`, prerelease for `vX-suffix`) and `image` (`packages: write`; `ghcr.io/<owner>/sbd:<tag>`, and `:latest` for a final release). GitHub-owned actions only (checkout, setup-go v7.0.0, upload/download-artifact), pinned by SHA; `docker login` with the job token.
 - **Image** `tools/sbd/Dockerfile`: `docker:28.5.2-cli` (Compose v2.40.3) + sbd; run with the socket and the checkout at the same path. Verified locally: `version`, `plan`, `doctor` against the host daemon.
 - `sbd version` (`dev` unless stamped).
-- **Not yet exercised on GitHub:** needs a tag push. A first `v0.1.0-rc.1` (prerelease) would test it end to end; the ghcr package is created private on first push (make it public in the package settings if wanted). Anyone with push access can push a `v*` tag: a tag ruleset (e.g. signed tags, owner only) is worth adding.
-- **Remaining in phase 4:** the docs rewrite with two equal paths (README first); decide whether to also publish the job images (config, seed, pg-upgrade), which compose builds locally today.
+- **First release `v0.1.0-rc.1`** (signed tag on `152c3ea`, 2026-11-02): all three jobs passed. The Release is a prerelease with `sbd-v0.1.0-rc.1-linux-amd64` and `SHA256SUMS` (checksum verified, binary prints `sbd v0.1.0-rc.1`); `ghcr.io/wileyj/sbd:v0.1.0-rc.1` (amd64) pulls anonymously (public) and prints the same; no `latest` for the prerelease. (15 "Phase 4")
+- **Tag protection (owner, 2026-11-05: layers 1–4; a `release` environment with a required reviewer may come later).** (1) Ruleset `release tags` (id 26650371) on `refs/tags/v*`: creation, update and deletion restricted, bypass only for the repository admin role. (2) `release.yaml` first fetches the tag object and requires GitHub's `verification.verified: true` for it (a GPG or SSH signature from a key registered on the tagger's GitHub account), so no key lives in the repo and it works unchanged upstream for any maintainer (owner, 2026-11-05: option 1, no allow-list; a first version checked a key file in the repo, which tied releases to the owner's key). A lightweight tag fails (no tag object); checked against `v0.1.0-rc.1`: verified, reason `valid`. (3) Immutable releases enabled. (4) `actions/attest-build-provenance` v4.2.2 on the binary + `SHA256SUMS` (github-release job) and the image (pushed to the registry); `id-token: write` + `attestations: write` on those jobs, approved. Not yet exercised: the next tag after merging (e.g. `v0.1.0-rc.2`).
+- **Docs rewrite, two equal paths:** README leads with plain Compose and `sbd` side by side (quickstart table, seed, services), drops the aria2 build guide and the `manage.sh` quickstart; `docs/usage.md` is task-first (table, services, stop, logs, reset, seed, pg-upgrade, BNS, getting `sbd`) with `manage.sh` as a deprecated appendix mapping old commands; `upgrade.md` gains PostgreSQL majors and old-layout installs; `issues.md`, `docker.md`, `config.md`, `monitoring.md` lose the stale `manage.sh`/`sudo`/deleted-script instructions.
+- **Decided (owner, 2026-11-03):** the job images (config, seed, pg-upgrade) are not published; compose always builds them locally, for security.
 
 ## Phase 3d: `pg-upgrade` job and `sbd db upgrade`, done (2026-11-02)
 
@@ -265,34 +275,25 @@ Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (re
 - **`compose.yaml`:** `PGDATA=/var/lib/postgresql/data` on postgres (the 18 images moved the default; an 18 bump would have started empty).
 - Verified 16→17 (clone, copy, link) and 17→18 with real clusters (15 "Phase 3d").
 
-## Deferred: pare down metrics collection before release (owner, 2026-10-27)
+## Metrics trimming (M7): done (2026-11-05)
 
-The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.
+Sized from the Run A soak (5,859 series, 186 samples/s, 42 MB/day; the rules and dashboards used about 6%). Owner, 2026-11-05: trim; app scrape interval 15 s, configurable; postgres (and the other infrastructure jobs) fixed at 30 s; retention 30 days.
+- **App jobs** (stacks-node, stacks-api, stacks-signer): every metric kept; scraped every `PROMETHEUS_APP_SCRAPE_INTERVAL` (default `15s`, validated as a Prometheus duration, rendered by the config job on every `up`).
+- **Infrastructure jobs** (prometheus, node-exporter, cadvisor, postgres): the global 30 s; exporter flags so they don't collect what nobody uses (node-exporter `--collector.disable-defaults` + cpu, diskstats, filesystem, loadavg, meminfo, netdev, stat; cAdvisor `--enable_metrics=cpu,memory,diskIO,network,oom_event`; postgres-exporter without the per-table, replication, roles, settings, WAL and bgwriter collectors, with `long_running_transactions`), plus a Prometheus `metric_relabel_configs` keep-list per job (`tools/config/monitoring.go`). Postgres keeps size, connections, transactions, deadlocks, locks and the oldest open transaction (nothing used it before).
+- **Retention** `PROMETHEUS_RETENTION=30d`.
+- **Guards:** `TestKeepListsCoverRulesAndDashboards` fails if a rule or panel uses an infrastructure metric its keep-list drops; the config image's build context now includes the rules and dashboards for it.
+- **Verified** on a testnet `node,api,monitoring` scratch stack: all targets up, app jobs every 15 s, the others every 30 s; every dashboard panel and rule query returns data (the only empty ones are the signer, not enabled, and alerts not firing); **860 series** in total (node 55, API 256, infrastructure 546; was about 5,860 on mainnet, 5,392 of them infrastructure). Projection for mainnet: about 0.6 GB for 30 days.
 
-- **Keep:** application-level metrics (stacks-node, API, signer) plus a small set of core system metrics, mainly storage (filesystem free/size, disk I/O), with possibly memory and CPU per container and for the host.
-- **How:**
-  - `metric_relabel_configs` keep-lists per scrape job, rendered by the config job;
-  - postgres-exporter `--collector.*` flags / `--disable-default-metrics`;
-  - node-exporter `--collector.disable-defaults` plus the collectors that are needed (`filesystem`, `diskstats`, `meminfo`, `loadavg`, `cpu`);
-  - a narrower cAdvisor `--enable_metrics`.
-- **Constraint:** keep every series used by `conf/monitoring/rules/stacks.yml` and the three dashboards. The promtool tests and a "every panel query returns data" check (as done in the live test) guard this.
-- **When:** before the first release that ships monitoring. Sizing input comes from the phase 5 stress test (series count, TSDB size, RAM).
+## Exposure model: decided and done (owner, 2026-11-05)
 
-## Deferred: postgres exposure and the network model (owner, 2026-10-27)
-
-Today postgres is reachable from the host only through the optional `-f postgres` / `EXPOSE_POSTGRES=true` override (`compose.postgres-port.yaml`, bound to 127.0.0.1). The owner wants to revisit this:
-- **Option A: drop the flag** and keep postgres internal; anyone needing it uses `docker compose exec postgres psql` or a tunnel.
-- **Option B: Docker host networking** (`network_mode: host`) instead of the project network.
-
-Trade-offs to weigh for B:
-- **What gets simpler:** no per-port publishing, so flags like this one go away.
-- **Bind addresses become the only protection.** Every listening port is on the host directly, so each service's own setting has to be right: `rpc_bind`, `prometheus_bind`, the API's `STACKS_*_HOST`, postgres `listen_addresses`, Prometheus and Grafana. A wrong default would be publicly reachable.
-- **Service-name DNS is lost** (`stacks-blockchain-api:3700`, `postgres`, `prometheus`, `node-exporter`, ...). The renderer, observers, scrape targets and the API's DB host would move to `127.0.0.1:<port>`.
-- **Port clashes:** two services can't share a port, as the API and the node do today with 9153 for metrics.
-- **Portability:** on Linux it's native. On Docker Desktop, host networking is a newer opt-in feature, which matters for tier-1 macOS (Q18).
-- **Container names** and the `DOCKER_NETWORK` contract (§A.19–20) would change.
-
-Decide before the first release; it affects compose.yaml, the renderer, the monitoring targets and the docs.
+Local by default; exposing a service is an explicit opt-in in `.env`. No host networking.
+- **API (3999), node RPC (20443):** `API_BIND_ADDR` / `RPC_BIND_ADDR`, default `127.0.0.1` (**breaking**: they were on all interfaces). `curl localhost:…` works on the host; other machines are refused.
+- **Node P2P (20444):** public, for inbound peers.
+- **Serving the API to other machines:** the `proxy` profile (nginx `1.30.5-alpine`, pinned now), public on `PROXY_BIND_ADDR` (default `0.0.0.0`), ports 80/443. `PROXY_TLS=1`: HTTPS with `fullchain.pem`/`privkey.pem` from `PROXY_TLS_DIR` (own certificates; ACME possibly later), HTTP redirects, `/status` stays on HTTP for the healthcheck. The config job renders `conf/nginx/proxy.conf`. The API answers the node's `/v2/*` too.
+- **Postgres:** reachable only inside the stack; the API is its only client ("nothing good can come from" remote access). `POSTGRES_LOCAL=1` publishes it on `127.0.0.1:POSTGRES_LOCAL_PORT` through a small nginx stream proxy (`postgres-local`, `deploy.replicas`), with no setting for any other address. Replaces `compose.postgres-port.yaml` and `EXPOSE_POSTGRES` (`manage.sh -f postgres` and `EXPOSE_POSTGRES=true` map to it).
+- **Metrics, Prometheus, Grafana:** always `127.0.0.1` (`METRICS_BIND_ADDR`, `MONITORING_BIND` removed: never exposed externally); SSH tunnel from elsewhere.
+- `sbd doctor` warns when the API or RPC is bound beyond localhost; `sbd migrate` explains the removed settings and the new default.
+- **Verified live** (testnet scratch, TLS with a self-signed cert): bindings as above; API/RPC 200 on localhost and refused from the LAN; the proxy over another host address: `/status` ok, HTTP → 301 → HTTPS, API and `/v2/info` 200, our certificate; metrics refused from the LAN; `POSTGRES_LOCAL=1` psql via 127.0.0.1 works and LAN refused, `=0` removes the proxy. On this host the LAN address's 80/443 are taken by an unrelated Traefik (local Kubernetes ingress).
 
 ## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
 

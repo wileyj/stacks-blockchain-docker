@@ -77,3 +77,24 @@ tests:
             exp_annotations:
               summary: "stacks-signer metrics unreachable"
               description: "Prometheus can't scrape stacks-signer:9154 (stacks-signer). On a fresh node this is normal during the initial Bitcoin header sync."
+
+  ## Burn height: a fresh series (restart) stays quiet without 2 h of history; a routine 90-min Bitcoin
+  ## gap stays quiet; 2.5 h without a change fires
+  - interval: 1m
+    input_series:
+      - series: 'stacks_node_burn_block_height{job="stacks-node", instance="stacks-blockchain:9153"}'
+        values: '900000x90 900001x200'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: StacksBurnchainStalled
+        exp_alerts: []
+      - eval_time: 230m
+        alertname: StacksBurnchainStalled
+        exp_alerts: []
+      - eval_time: 250m
+        alertname: StacksBurnchainStalled
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stacks-node, instance: "stacks-blockchain:9153"}
+            exp_annotations:
+              summary: "Burn (Bitcoin) height hasn't advanced for 2.5 hours"
+              description: "No change in the node's burn height for 2.5 hours. Check the Bitcoin peer (BTC_HOST) and the node's log; a node still catching up from a snapshot also holds its burn height while it processes Stacks blocks."

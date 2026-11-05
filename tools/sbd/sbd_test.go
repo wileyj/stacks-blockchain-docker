@@ -116,6 +116,8 @@ func TestPlans(t *testing.T) {
 		{"config render", sampleEnv, []string{"config", "render"}, "docker compose run --rm config\n", 0},
 		{"config without render", sampleEnv, []string{"config"}, "", 2},
 		{"env set", sampleEnv, []string{"env", "set", "NETWORK=Testnet", "STACKS_LOG_DEBUG=1"}, "edit .env: NETWORK=testnet\nedit .env: STACKS_LOG_DEBUG=1\n", 0},
+		{"env set hides secrets", sampleEnv, []string{"env", "set", "SIGNER_PRIVATE_KEY=ab01", "GRAFANA_ADMIN_PASSWORD=pw", "AUTH_TOKEN=t", "BTC_HOST=h"},
+			"edit .env: SIGNER_PRIVATE_KEY=<hidden>\nedit .env: GRAFANA_ADMIN_PASSWORD=<hidden>\nedit .env: AUTH_TOKEN=<hidden>\nedit .env: BTC_HOST=h\n", 0},
 		{"env set bad profiles", sampleEnv, []string{"env", "set", "COMPOSE_PROFILES=node,seed"}, "", 2},
 		{"unknown command", sampleEnv, []string{"frobnicate"}, "", 2},
 		{"stop takes no arguments", sampleEnv, []string{"stop", "now"}, "", 2},
@@ -232,6 +234,10 @@ func TestDoctor(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "2.24.0 or newer is required") {
 		t.Errorf("old compose: exit %d\n%s", code, out)
 	}
+	code, out, _ = sbd(t, project(t, sampleEnv+"API_BIND_ADDR=0.0.0.0\n"), &fakeDocker{version: "5.1.4"}, "doctor")
+	if code != 0 || !strings.Contains(out, "API_BIND_ADDR=0.0.0.0: reachable from other machines") {
+		t.Errorf("exposed API: exit %d\n%s", code, out)
+	}
 	code, out, _ = sbd(t, project(t, strings.Replace(sampleEnv, "node,api", "node,api,signer", 1)), &fakeDocker{version: "5.1.4"}, "doctor")
 	if code != 1 || !strings.Contains(out, "SIGNER_PRIVATE_KEY is empty") {
 		t.Errorf("signer without key: exit %d\n%s", code, out)
@@ -314,7 +320,7 @@ func TestPlansAreDocumented(t *testing.T) {
 // An install from before the compose-first layout: no COMPOSE_PROFILES, an event-replay setting, a
 // hand-edited Config.toml with the signer on, and an event-replay data dir.
 func TestMigrate(t *testing.T) {
-	dir := project(t, "NETWORK=mainnet\nSIGNER_PRIVATE_KEY=ab01\nSTACKS_EXPORT_EVENTS_FILE=/tmp/events.tsv\n")
+	dir := project(t, "NETWORK=mainnet\nSIGNER_PRIVATE_KEY=ab01\nSTACKS_EXPORT_EVENTS_FILE=/tmp/events.tsv\nEXPOSE_POSTGRES=true\n")
 	os.MkdirAll(filepath.Join(dir, "conf", "mainnet"), 0o755)
 	os.WriteFile(filepath.Join(dir, "conf", "mainnet", "Config.toml"), []byte("[node]\n# stacker = false\nstacker = true\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "persistent-data", "mainnet", "event-replay"), 0o755)
@@ -325,6 +331,8 @@ func TestMigrate(t *testing.T) {
 	for _, want := range []string{
 		"edit .env: COMPOSE_PROFILES=node,api,signer\n",
 		"# STACKS_EXPORT_EVENTS_FILE in .env is no longer used",
+		"# EXPOSE_POSTGRES in .env is no longer used (use POSTGRES_LOCAL=1",
+		"now listen on this host only",
 		"docker compose run --rm config suggest\n",
 		"event-replay is no longer used",
 	} {

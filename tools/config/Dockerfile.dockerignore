@@ -5,3 +5,5 @@
 !conf/*/*.sample
 !conf/*/Config.deployment.toml
 !conf/upstream/
+!conf/monitoring/rules/
+!conf/monitoring/grafana/dashboards/

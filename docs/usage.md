@@ -1,14 +1,11 @@
 # Usage
 
-The stack is the root [`compose.yaml`](../compose.yaml), and plain `docker compose` (run from the repo
-root) is a complete way to use it: `.env` holds every setting, with `NETWORK` and `COMPOSE_PROFILES`
-choosing the network and the services. Two optional helpers sit on top and run the same commands:
-
-- **`sbd`**, a single binary (Linux, macOS, Windows) with preflight checks (`sbd doctor`), friendly
-  validation, `--json` output and `sbd plan <command>`, which prints the exact `.env` edits and
-  `docker compose` commands instead of running them.
-- **`./manage.sh`**, the original script (bash; see "Script options" below). **Deprecated**: it keeps
-  working unchanged for now and will be removed in a later release.
+The stack is the root [`compose.yaml`](../compose.yaml), and plain `docker compose`, run from the repo
+root, is a complete way to use it. `.env` holds every setting: `NETWORK` and `COMPOSE_PROFILES` choose
+the network and the services. **`sbd`** is an optional helper that runs the same commands and adds
+preflight checks (`sbd doctor`), friendly validation, `--json` output, and `sbd plan <command>`, which
+prints the exact `.env` edits and `docker compose` commands instead of running them. Use either, or
+both: neither keeps state the other doesn't see.
 
 ## Plain Docker Compose and `sbd`
 
@@ -33,143 +30,83 @@ choosing the network and the services. Two optional helpers sit on top and run t
 | Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
-when there is none, and refuses `seed`, `reset` and `bns` while the stack runs; the jobs refuse on their
-own too, so plain Compose is just as safe.
+when there is none, and refuses `seed`, `reset`, `bns` and `db upgrade` while the stack runs. The jobs
+refuse on their own too, so plain Compose is just as safe.
 
 Getting `sbd`:
 - **Release binary** (Linux x86-64 for now): download `sbd-<version>-linux-amd64` from the repo's
-  GitHub Releases, check it against `SHA256SUMS`, and put it on your `PATH`. Other systems: use the
-  image or build from source.
-- **Container image** (linux/amd64 for now), no install: run it from the checkout with the Docker socket and the checkout
-  mounted at the same path (so the paths compose uses resolve on the host):
+  GitHub Releases, check it, and put it on your `PATH`:
+  `sha256sum -c --ignore-missing SHA256SUMS`, and (with the GitHub CLI) its build provenance:
+  `gh attestation verify sbd-<version>-linux-amd64 --repo <owner>/stacks-blockchain-docker`, which
+  shows it was built by the release workflow from a signed release tag. Releases can't be changed once
+  published.
+- **Container image** (linux/amd64 for now), no install: run it from the checkout with the Docker
+  socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:
   `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
-- **From source** with Go 1.25: `cd tools/sbd && go build -o sbd .`, or without Go:
+  (provenance: `gh attestation verify oci://ghcr.io/<owner>/sbd:<version> --repo <owner>/stacks-blockchain-docker`)
+- **From source** with Go 1.25, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
   `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
 
-# Script options (deprecated)
+## Services
 
-`./manage.sh` is deprecated and will be removed; it prints a notice on stderr. It wraps the same
-[`compose.yaml`](../compose.yaml). Each section below also shows the
-plain `docker compose` equivalent.
+`COMPOSE_PROFILES` in `.env` lists the services `up` starts:
 
-## Usage
+| Profile | Services | Notes |
+|---|---|---|
+| `node` | stacks-node | |
+| `api` | Stacks Blockchain API and postgres | The node delivers events to the API, so a configured API is a liveness dependency of the node |
+| `signer` | stacks-signer | Needs `SIGNER_PRIVATE_KEY` (testnet: `TESTNET_SIGNER_PRIVATE_KEY`) |
+| `proxy` | nginx on ports 80/443, on all interfaces | **The way to serve the API to other machines** (see below) |
+| `monitoring` | Prometheus, Grafana, exporters on 127.0.0.1 | Set `GRAFANA_ADMIN_PASSWORD` first; see [Monitoring](./monitoring.md) |
 
-```
-Usage:
-    ./manage.sh -n <network> -a <action> <optional args>
-        -n|--network: [ mainnet | testnet ]
-        -a|--action: [ start | stop | logs | reset | upgrade | import | export | bns ]
-    optional args:
-        -f|--flags: [ signer,proxy,postgres,monitoring ]
-        export: combined with 'logs' action, exports logs to a text file
-    ex: ./manage.sh -n mainnet -a start -f proxy
-	ex: ./manage.sh -n mainnet -a start -f signer,proxy
-    ex: ./manage.sh --network mainnet --action start --flags proxy
-    ex: ./manage.sh -n mainnet -a logs export
-```
+The default is `node,api`; `node` alone runs a follower without the API. After removing a profile, stop
+with `docker compose --profile '*' down` (or `sbd stop`): a plain `up` or `down` leaves the removed
+profile's containers running.
 
-### Starting Services
+## Exposing services
 
-```bash
-./manage.sh -n <network> -a start
-```
+By default everything listens on this host only (`127.0.0.1`), except the node's P2P port, which is
+public so other nodes can connect: `curl localhost:20443/v2/info` and `curl localhost:3999/extended`
+work on the host itself, and other machines are refused.
 
-```bash
-./manage.sh -n <network> -a restart
-```
+| To | Do |
+|---|---|
+| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): nginx on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
+| ... over HTTPS | `PROXY_TLS=1`, with `fullchain.pem` and `privkey.pem` in `PROXY_TLS_DIR` (default `./conf/nginx/tls`); port 80 then redirects to 443 |
+| Reach the database from tools on this host | `POSTGRES_LOCAL=1`: published on `127.0.0.1:5432` (`POSTGRES_LOCAL_PORT`). It can't be published beyond this host: the API is its only client. Ad hoc: `docker compose exec postgres psql -U postgres` |
+| Publish the API or RPC port directly | `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0` (`sbd doctor` flags it) |
+| See metrics, Prometheus or Grafana from elsewhere | an SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 <host>`: they're never published beyond this host |
 
-#### With optional signer
+## Stopping
 
-```bash
-./manage.sh -n <network> -a start -f signer
-```
+The node is stopped first and gets up to `STACKS_SHUTDOWN_TIMEOUT` seconds to finish its run loop.
+Don't pass `-t` to `down`: it would override that.
 
-```bash
-./manage.sh -n <network> -a restart -f signer
-```
+## Logs
 
-#### With optional proxy
+`docker compose logs -f` (or `sbd logs`) follows every service; name one to follow only it.
+`sbd logs export` writes each container's full log to `./exported-logs/<container>.log`, overwriting the
+previous export.
 
-```bash
-./manage.sh -n <network> -a start -f proxy
-```
-
-```bash
-./manage.sh -n <network> -a restart -f proxy
-```
-
-#### With monitoring
-
-Prometheus and Grafana on 127.0.0.1; set `GRAFANA_ADMIN_PASSWORD` in `.env` first. See [Monitoring](./monitoring.md).
-
-```bash
-./manage.sh -n <network> -a start -f monitoring
-```
-
----
-
-### Stopping Services
-
-```bash
-./manage.sh -n <network> -a stop
-# or: docker compose --profile '*' down
-```
-
-The node is stopped first and gets up to `STACKS_SHUTDOWN_TIMEOUT` seconds to finish its run loop;
-don't pass `-t` to `down`, which would override that. A stack started with an older version of this
-repo (the `compose-files/` layout) is stopped the same way by `./manage.sh -a stop`.
-
----
-
-### Event Replay (removed)
-
-API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead
-(see "Seed from the Hiro archive" below).
-
----
-
-### Logging
-
-#### Stream logs to terminal
-
-```bash
-./manage.sh -n <network> -a logs
-```
-
-#### Export docker log files
-
-This will create a log file in `./exported-logs` for every running service. \
-_Note that each time you run this command the log files will be overwritten._
-
-```bash
-./manage.sh -n <network> -a logs export
-```
-
----
-
-### Ensure all images are up to date
-
-```bash
-./manage.sh -n <network> -a pull
-```
-
-### Delete all chainstate data
+## Delete this network's data
 
 Empties this network's data dirs (chainstate, API database, signer) after listing them and asking for
-confirmation. It runs in a container, so no sudo is needed, and the dirs themselves are kept, so
+confirmation. It runs in a container, so no sudo is needed, and it keeps the dirs themselves, so
 dedicated mounts keep working.
 
 ```bash
-./manage.sh -n <network> -a reset
-# or, with the stack stopped: docker compose run --rm reset   (--yes to skip the prompt)
+docker compose --profile '*' down
+docker compose run --rm reset      # --yes (or CONFIRM=yes) to skip the prompt
+# sbd: sbd stop && sbd reset
 ```
 
-### Seed from the Hiro archive
+## Seed from the Hiro archive
 
-Restores the chainstate and the API database from a snapshot instead of syncing from genesis. See the
-README for details; the stack must be stopped. The archive node's own databases (`peer.sqlite`, its
-peer list, and `event_observers.sqlite`, its pending event deliveries) are left out: the node creates
-new ones and finds its peers from the bootstrap node.
+Restores the chainstate and the API database from a snapshot instead of syncing from genesis (see the
+[README](../README.md#seed-from-the-hiro-archive-instead-of-syncing-from-genesis)); the stack must be
+stopped. The archive node's own databases (`peer.sqlite`, its peer list, and `event_observers.sqlite`,
+its pending event deliveries) are left out: the node creates new ones and finds its peers from the
+bootstrap node.
 
 ```bash
 docker compose --profile '*' down
@@ -182,7 +119,13 @@ docker compose run --rm seed --defer-index nft_events_asset_identifier_index
 docker compose logs -f build-indexes   # progress of deferred index builds once the stack runs
 ```
 
-### Upgrade the API database to a new PostgreSQL major
+A deferred index builds with `CREATE INDEX CONCURRENTLY` while the stack runs (about 19 hours for the
+mainnet NFT index). Until it's done, don't run `VACUUM` or `ANALYZE` on its table (`nft_events`): the
+two deadlock, postgres cancels the build, and `build-indexes` starts it over from the beginning.
+
+With `sbd`, the same options follow `sbd seed`, for example `sbd seed --dry-run`.
+
+## Upgrade the API database to a new PostgreSQL major
 
 After raising `POSTGRES_VERSION` in `.env` (for example from 16 to 17), upgrade the existing database
 before starting the stack; the new postgres can't open an older major's files. The job runs
@@ -193,6 +136,7 @@ data dir, and swaps it in only after the upgrade and the statistics rebuild succ
 docker compose --profile '*' down
 docker compose run --rm pg-upgrade --dry-run   # versions, size, mode, free space
 docker compose run --rm pg-upgrade             # asks first; --yes (or CONFIRM=yes) without a terminal
+# sbd: sbd stop && sbd db upgrade --dry-run && sbd db upgrade
 ```
 
 `--mode`: `auto` (the default) uses `clone` where the filesystem supports copy-on-write files (XFS
@@ -202,11 +146,32 @@ old one can't be used again. Roles, passwords and `pg_hba.conf` are kept; the ne
 `postgresql.conf` defaults are used. The image can upgrade from the older majors its Alpine release
 packages (16 for PostgreSQL 17); for anything older, re-seed instead.
 
-### Download BNS data
+## Download BNS data
 
-Store legacy BNS data to `./persistent-data/bns-data` \
-_This step is required if the env var `BNS_IMPORT_DIR` is uncommented_
+Only for a sync **from genesis** with `BNS_IMPORT_DIR` uncommented in `.env`: the API imports the
+legacy BNS v1 data from `./persistent-data/bns-data` while it syncs. A seeded node already has it.
 
 ```bash
-./manage.sh bns
+docker compose run --rm bns     # sbd: sbd bns
 ```
+
+## `./manage.sh` (deprecated)
+
+`./manage.sh` still works the way it did, wrapping the same `compose.yaml`, and prints a deprecation
+notice on stderr. It will be removed in a later release. Its flags apply to one run only, while
+`COMPOSE_PROFILES` and `sbd start --with` persist the choice in `.env`.
+
+| `./manage.sh` | Plain Docker Compose | `sbd` |
+|---|---|---|
+| `-n <network> -a start [-f signer,proxy,monitoring]` | set `NETWORK` and `COMPOSE_PROFILES`, then `docker compose up -d` | `sbd start --network <network> --profiles node,api,…` |
+| `-n <network> -a stop` | `docker compose --profile '*' down` | `sbd stop` |
+| `-n <network> -a restart` | `docker compose --profile '*' down`, then `docker compose up -d` | `sbd restart` |
+| `-n <network> -a logs` / `logs export` | `docker compose logs -f` | `sbd logs` / `sbd logs export` |
+| `-n <network> -a pull` | `docker compose pull --ignore-buildable` | `sbd pull` |
+| `-n <network> -a reset` | `docker compose run --rm reset` | `sbd reset` |
+| `bns` | `docker compose run --rm bns` | `sbd bns` |
+| `status` | `docker compose ps` | `sbd status` |
+
+A stack started from the old `compose-files/` layout is stopped by `./manage.sh -n <network> -a stop`;
+see [Upgrading](./upgrade.md#an-install-from-before-the-compose-layout) for moving such an install over.
+API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead.

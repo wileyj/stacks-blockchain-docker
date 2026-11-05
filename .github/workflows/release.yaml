@@ -3,6 +3,11 @@
 ## and doesn't move the image's `latest`. Write access is granted per job, only where it publishes.
 ## For now Linux x86-64 only (owner, 2026-11-02); the code also builds for darwin, windows, freebsd and
 ## arm64, so more targets are a matter of the lists below.
+## Protection (owner, 2026-11-05): a tag ruleset lets only the repo admin create, move or delete v* tags;
+## the tag must carry a signature GitHub verifies (a GPG or SSH key on the tagger's GitHub account,
+## checked first, so no keys live in the repo and any maintainer can release); releases are
+## immutable once published; the binary, SHA256SUMS and the image carry build provenance attestations
+## (gh attestation verify <file> --repo <owner>/<repo>).
 name: Release
 
 on:
@@ -25,6 +30,20 @@ jobs:
         working-directory: tools/sbd
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      ## checkout leaves the tag as a plain ref: fetch the tag object, then ask GitHub whether its
+      ## signature verifies against a key registered on the tagger's GitHub account
+      - name: verify the tag is signed (GitHub-verified signature)
+        working-directory: .
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          obj=$(git rev-parse "refs/tags/${TAG}")
+          [ "$(git cat-file -t "${obj}")" = tag ] || { echo "::error::${TAG} is a lightweight tag: create release tags with git tag -s"; exit 1; }
+          read -r verified reason < <(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj}" --jq '"\(.verification.verified) \(.verification.reason)"')
+          [ "${verified}" = true ] || { echo "::error::${TAG} has no GitHub-verified signature (${reason}): sign it with a key added to your GitHub account"; exit 1; }
+          echo "${TAG}: signature verified by GitHub"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25"
@@ -54,11 +73,16 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sbd-binaries
           path: dist
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
       - name: gh release create
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,6 +99,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: build and push ghcr.io/<owner>/sbd:<tag> (and latest for a final release)
@@ -92,3 +118,11 @@ jobs:
             "${tags[@]}" tools/sbd
           docker run --rm "${image}:${TAG}" version
           for t in "${tags[@]}"; do [ "$t" = -t ] || docker push "$t"; done
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "${image}:${TAG}"); digest=${digest#*@}
+          echo "name=${image}" >> "$GITHUB_OUTPUT"; echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+        id: push
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ func (s Step) String() string {
 	case s.CreateEnv:
 		return "cp sample.env .env"
 	case s.SetKey != "":
-		return fmt.Sprintf("edit .env: %s=%s", s.SetKey, quote(s.SetValue))
+		return fmt.Sprintf("edit .env: %s=%s", s.SetKey, shown(s.SetKey, s.SetValue))
 	}
 	parts := []string{"docker"}
 	for _, a := range s.Docker {
@@ -43,6 +44,17 @@ func (s Step) String() string {
 		parts = append(parts, ">", shellQuote(s.Stdout))
 	}
 	return strings.Join(parts, " ")
+}
+
+// secretKey matches settings whose values must not be printed (passwords, private keys, tokens).
+var secretKey = regexp.MustCompile(`(?i)(PASS|PRIVATE_KEY|TOKEN|SECRET)`)
+
+// shown is the value as printed: secrets are replaced, so plans and edits can be shared or logged.
+func shown(key, value string) string {
+	if value != "" && secretKey.MatchString(key) {
+		return "<hidden>"
+	}
+	return quote(value)
 }
 
 func shellQuote(a string) string {
@@ -58,9 +70,16 @@ func (p Plan) Print(w io.Writer, asJSON bool) error {
 		if steps == nil {
 			steps = Plan{}
 		}
+		masked := make(Plan, len(steps))
+		for i, st := range steps {
+			if st.SetKey != "" && secretKey.MatchString(st.SetKey) && st.SetValue != "" {
+				st.SetValue = "<hidden>"
+			}
+			masked[i] = st
+		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(map[string]any{"steps": steps})
+		return enc.Encode(map[string]any{"steps": masked})
 	}
 	for _, s := range p {
 		fmt.Fprintln(w, s.String())
@@ -95,7 +114,7 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 					return 1, err
 				}
 				backedUp = true
-				fmt.Fprintf(os.Stderr, "sbd: .env: %s=%s (previous .env in .env.save)\n", s.SetKey, quote(s.SetValue))
+				fmt.Fprintf(os.Stderr, "sbd: .env: %s=%s (previous .env in .env.save)\n", s.SetKey, shown(s.SetKey, s.SetValue))
 			}
 		default:
 			out := io.Writer(os.Stdout)
