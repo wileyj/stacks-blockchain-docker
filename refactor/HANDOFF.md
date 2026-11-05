@@ -275,18 +275,14 @@ Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (re
 - **`compose.yaml`:** `PGDATA=/var/lib/postgresql/data` on postgres (the 18 images moved the default; an 18 bump would have started empty).
 - Verified 16→17 (clone, copy, link) and 17→18 with real clusters (15 "Phase 3d").
 
-## Deferred: pare down metrics collection before release (owner, 2026-10-27)
+## Metrics trimming (M7): done (2026-11-05)
 
-The `monitoring` profile currently stores **every series each exporter offers**: all node, API and signer families, postgres-exporter's defaults, node-exporter's default collectors and cAdvisor's remaining metrics. That's fine for now; there's no harm in collecting it during development. For a release it's too broad, so it gets trimmed later, alongside the deferred automated PR.
-
-- **Keep:** application-level metrics (stacks-node, API, signer) plus a small set of core system metrics, mainly storage (filesystem free/size, disk I/O), with possibly memory and CPU per container and for the host.
-- **How:**
-  - `metric_relabel_configs` keep-lists per scrape job, rendered by the config job;
-  - postgres-exporter `--collector.*` flags / `--disable-default-metrics`;
-  - node-exporter `--collector.disable-defaults` plus the collectors that are needed (`filesystem`, `diskstats`, `meminfo`, `loadavg`, `cpu`);
-  - a narrower cAdvisor `--enable_metrics`.
-- **Constraint:** keep every series used by `conf/monitoring/rules/stacks.yml` and the three dashboards. The promtool tests and a "every panel query returns data" check (as done in the live test) guard this.
-- **When:** before the first release that ships monitoring. Sizing input comes from the phase 5 stress test (series count, TSDB size, RAM).
+Sized from the Run A soak (5,859 series, 186 samples/s, 42 MB/day; the rules and dashboards used about 6%). Owner, 2026-11-05: trim; app scrape interval 15 s, configurable; postgres (and the other infrastructure jobs) fixed at 30 s; retention 30 days.
+- **App jobs** (stacks-node, stacks-api, stacks-signer): every metric kept; scraped every `PROMETHEUS_APP_SCRAPE_INTERVAL` (default `15s`, validated as a Prometheus duration, rendered by the config job on every `up`).
+- **Infrastructure jobs** (prometheus, node-exporter, cadvisor, postgres): the global 30 s; exporter flags so they don't collect what nobody uses (node-exporter `--collector.disable-defaults` + cpu, diskstats, filesystem, loadavg, meminfo, netdev, stat; cAdvisor `--enable_metrics=cpu,memory,diskIO,network,oom_event`; postgres-exporter without the per-table, replication, roles, settings, WAL and bgwriter collectors, with `long_running_transactions`), plus a Prometheus `metric_relabel_configs` keep-list per job (`tools/config/monitoring.go`). Postgres keeps size, connections, transactions, deadlocks, locks and the oldest open transaction (nothing used it before).
+- **Retention** `PROMETHEUS_RETENTION=30d`.
+- **Guards:** `TestKeepListsCoverRulesAndDashboards` fails if a rule or panel uses an infrastructure metric its keep-list drops; the config image's build context now includes the rules and dashboards for it.
+- **Verified** on a testnet `node,api,monitoring` scratch stack: all targets up, app jobs every 15 s, the others every 30 s; every dashboard panel and rule query returns data (the only empty ones are the signer, not enabled, and alerts not firing); **860 series** in total (node 55, API 256, infrastructure 546; was about 5,860 on mainnet, 5,392 of them infrastructure). Projection for mainnet: about 0.6 GB for 30 days.
 
 ## Deferred: postgres exposure and the network model (owner, 2026-10-27)
 

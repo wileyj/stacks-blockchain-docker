@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,7 +34,11 @@ type Settings struct {
 	SignerKey            string
 	// ContainerMetrics: cAdvisor runs with the monitoring profile (MONITORING_CONTAINER_METRICS=1)
 	ContainerMetrics bool
+	// AppScrapeInterval: how often Prometheus scrapes the node, API and signer (a Prometheus duration)
+	AppScrapeInterval string
 }
+
+var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
 
 // SettingsFromEnv reads and validates the settings. Empty values keep the template's value.
 func SettingsFromEnv(getenv func(string) string) (Settings, error) {
@@ -76,6 +81,10 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	s.APIEventEndpoint = orDefault(getenv("API_EVENT_ENDPOINT"),
 		"stacks-blockchain-api:"+orDefault(getenv("STACKS_CORE_EVENT_PORT"), "3700"))
 	s.APIObserverTimeoutMS = orDefault(getenv("API_OBSERVER_TIMEOUT_MS"), "60000")
+	s.AppScrapeInterval = orDefault(strings.TrimSpace(getenv("PROMETHEUS_APP_SCRAPE_INTERVAL")), "15s")
+	if !durationRe.MatchString(s.AppScrapeInterval) {
+		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
+	}
 	switch v := orDefault(getenv("MONITORING_CONTAINER_METRICS"), "1"); v {
 	case "1":
 		s.ContainerMetrics = true

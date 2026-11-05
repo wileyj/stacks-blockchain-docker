@@ -37,7 +37,7 @@ SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`) over binding them to a public a
 | node-exporter | host disk space, memory, load, I/O |
 
 Scrape targets follow `COMPOSE_PROFILES`: the `config` job renders `conf/monitoring/prometheus.yml`, so a
-disabled service never shows as a down target. Prometheus keeps `PROMETHEUS_RETENTION` (default 15 days)
+disabled service never shows as a down target. Prometheus keeps `PROMETHEUS_RETENTION` (default 30 days)
 of data in the `prometheus-data` volume; Grafana's state is in `grafana-data`. `docker compose down -v`
 removes both.
 
@@ -73,7 +73,8 @@ No notifications are sent yet (no Alertmanager). The thresholds are starting poi
 |---|---|---|
 | `MONITORING_GRAFANA` | `1` | `0` runs without Grafana (Prometheus only) |
 | `MONITORING_CONTAINER_METRICS` | `1` | `0` skips cAdvisor, which needs privileged mode and host mounts |
-| `PROMETHEUS_RETENTION` | `15d` | how long Prometheus keeps data |
+| `PROMETHEUS_RETENTION` | `30d` | how long Prometheus keeps data |
+| `PROMETHEUS_APP_SCRAPE_INTERVAL` | `15s` | how often the node, API and signer are scraped; the infrastructure exporters (host, containers, postgres, Prometheus) stay at 30 s. Applied on the next `up` |
 | `*_VERSION` | see `sample.env` | image pins for Prometheus, Grafana, cAdvisor and the exporters |
 
 The switches take `0` or `1` (not `true`/`false`).

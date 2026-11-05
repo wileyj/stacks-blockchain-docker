@@ -45,6 +45,7 @@ services:
       - API_EVENT_ENDPOINT
       - API_OBSERVER_TIMEOUT_MS
       - MONITORING_CONTAINER_METRICS
+      - PROMETHEUS_APP_SCRAPE_INTERVAL
     volumes:
       - ./conf:/conf
 
@@ -356,7 +357,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
     ports:
       - ${MONITORING_BIND:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090
     volumes:
@@ -390,7 +391,8 @@ services:
       - --housekeeping_interval=30s
       - --store_container_labels=false
       - --whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project
-      - --disable_metrics=percpu,sched,tcp,udp,disk,hugetlb,referenced_memory,cpu_topology,resctrl,advtcp,memory_numa,process
+      ## Only what the dashboards use (Prometheus keeps a matching keep-list, tools/config/monitoring.go)
+      - --enable_metrics=cpu,memory,diskIO,network,oom_event
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -408,6 +410,15 @@ services:
     command:
       - --path.rootfs=/host
       - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+      ## Only the collectors the dashboards use (Prometheus keeps a matching keep-list)
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.diskstats
+      - --collector.filesystem
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.netdev
+      - --collector.stat
     volumes:
       - /:/host:ro
 
@@ -421,6 +432,18 @@ services:
       - DATA_SOURCE_URI=${PG_HOST:-postgres}:${PG_PORT:-5432}/${PG_DATABASE:-postgres}?sslmode=disable
       - DATA_SOURCE_USER=${PG_USER:-postgres}
       - DATA_SOURCE_PASS=${PG_PASSWORD:-postgres}
+    ## Database-level metrics only: the per-table collectors were 2 200 series nothing used, queried
+    ## from the API database on every scrape. Prometheus keeps a matching keep-list
+    command:
+      - --no-collector.stat_user_tables
+      - --no-collector.statio_user_tables
+      - --no-collector.stat_bgwriter
+      - --no-collector.replication
+      - --no-collector.replication_slots
+      - --no-collector.roles
+      - --no-collector.wal
+      - --collector.long_running_transactions
+      - --no-collector.settings
     depends_on:
       postgres:
         condition: service_healthy
