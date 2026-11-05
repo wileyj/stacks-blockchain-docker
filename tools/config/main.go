@@ -71,10 +71,42 @@ func run(confRoot string, getenv func(string) string) error {
 			return err
 		}
 		fmt.Println("config: wrote monitoring/prometheus.yml")
+		if err := renderAlerting(confRoot, s); err != nil {
+			return err
+		}
 	}
 	for _, o := range s.Observers() {
 		fmt.Printf("config: events_observer %s\n", o.(map[string]any)["endpoint"])
 	}
+	return nil
+}
+
+// renderAlerting writes Grafana's alerting provisioning file with MONITORING_ALERTS=1 and removes it
+// otherwise, so turning alerts off takes effect on the next start.
+func renderAlerting(confRoot string, s Settings) error {
+	dir := filepath.Join(confRoot, "monitoring", "grafana", "provisioning", "alerting")
+	dest := filepath.Join(dir, "stacks.json")
+	if !s.Alerts {
+		if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	rules, err := os.ReadFile(filepath.Join(confRoot, "monitoring", "rules", "stacks.yml"))
+	if err != nil {
+		return fmt.Errorf("reading the alert rules: %w", err)
+	}
+	out, err := RenderGrafanaAlerting(rules, s)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := writeAtomic(dest, out, 0o644); err != nil {
+		return err
+	}
+	fmt.Println("config: wrote monitoring/grafana/provisioning/alerting/stacks.json (Grafana alerting on)")
 	return nil
 }
 

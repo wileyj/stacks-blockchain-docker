@@ -1,0 +1,2 @@
+## Grafana alerting provisioning: stacks.json is written here by the config job with
+## MONITORING_ALERTS=1 (generated from conf/monitoring/rules/stacks.yml) and removed otherwise.

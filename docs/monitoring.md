@@ -66,7 +66,24 @@ and alerts, visible under Prometheus → Alerts and on the Stacks node dashboard
 | `ContainerRestarting`, `ContainerMemoryHigh` | a stack container restarts repeatedly / uses over 90% of host memory |
 | `HostDiskSpaceLow` | a filesystem has less than 10% free |
 
-No notifications are sent yet (no Alertmanager). The thresholds are starting points.
+The thresholds are starting points, tuned on the mainnet soak.
+
+### Notifications (Grafana alerting, off by default)
+
+With `MONITORING_ALERTS=1`, Grafana evaluates the same alerts and sends them to a webhook and/or email.
+The config job generates Grafana's alert rules from `stacks.yml` on every start, so the alert
+expressions are defined (and tested with promtool) in one place; Grafana's own evaluation and delivery
+are not covered by those tests.
+
+```bash
+MONITORING_ALERTS=1
+GRAFANA_ALERT_WEBHOOK_URL=https://ntfy.sh/<topic>   # any webhook receiver: ntfy, Matrix/Discord bridges, an incident tool
+GRAFANA_ALERT_EMAIL=ops@example.org                 # with GRAFANA_SMTP_HOST (host:port), _USER, _PASSWORD, _FROM
+```
+
+Without a contact point (or with `MONITORING_GRAFANA=0`) the config job refuses to start the stack.
+The rules show in Grafana under Alerting, in the "Stacks" folder; notifications are grouped by alert
+and job and repeat every 4 hours while firing. `MONITORING_ALERTS=0` removes them on the next `up`.
 
 ## Options
 
@@ -75,6 +92,7 @@ No notifications are sent yet (no Alertmanager). The thresholds are starting poi
 | `MONITORING_GRAFANA` | `1` | `0` runs without Grafana (Prometheus only) |
 | `MONITORING_CONTAINER_METRICS` | `1` | `0` skips cAdvisor, which needs privileged mode and host mounts |
 | `PROMETHEUS_RETENTION` | `30d` | how long Prometheus keeps data |
+| `MONITORING_ALERTS` | `0` | `1` sends alert notifications through Grafana (see above) |
 | `PROMETHEUS_APP_SCRAPE_INTERVAL` | `15s` | how often the node, API and signer are scraped; the infrastructure exporters (host, containers, postgres, Prometheus) stay at 30 s. Applied on the next `up` |
 | `*_VERSION` | see `sample.env` | image pins for Prometheus, Grafana, cAdvisor and the exporters |
 
