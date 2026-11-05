@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -35,6 +36,7 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 	if _, set := c.envGet("COMPOSE_PROFILES"); !set {
 		profiles := "node,api"
 		note("COMPOSE_PROFILES is missing from .env: without it `docker compose up -d` starts no services")
+		note("the API (3999) and the node RPC (20443) now listen on this host only: to serve the API to other machines, add proxy to COMPOSE_PROFILES (or set API_BIND_ADDR / RPC_BIND_ADDR)")
 		if legacy != "" && signerWasOn(legacy) {
 			if key := signerKeyVar(net); strings.TrimSpace(c.Value(key)) != "" {
 				profiles += ",signer"
@@ -44,9 +46,9 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 		}
 		p = append(p, Step{SetKey: "COMPOSE_PROFILES", SetValue: profiles})
 	}
-	for _, k := range obsoleteKeys {
+	for _, k := range sortedKeys(obsoleteKeys) {
 		if _, set := c.envGet(k); set {
-			note(k + " in .env is no longer used (event replay was removed); you can delete it")
+			note(k + " in .env is no longer used (" + obsoleteKeys[k] + "); you can delete it")
 		}
 	}
 
@@ -81,10 +83,24 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 	return p, nil
 }
 
-// obsoleteKeys are .env settings of the old layout that nothing reads any more.
-var obsoleteKeys = []string{"STACKS_EXPORT_EVENTS_FILE"}
+// obsoleteKeys are .env settings that nothing reads any more, with what replaced them.
+var obsoleteKeys = map[string]string{
+	"STACKS_EXPORT_EVENTS_FILE": "event replay was removed",
+	"EXPOSE_POSTGRES":           "use POSTGRES_LOCAL=1, which publishes postgres on 127.0.0.1 only",
+	"METRICS_BIND_ADDR":         "metrics are published on 127.0.0.1 only; use an SSH tunnel from elsewhere",
+	"MONITORING_BIND":           "Prometheus and Grafana are published on 127.0.0.1 only; use an SSH tunnel from elsewhere",
+}
 
 // envGet reads .env only (not the sample.env fallback): whether a setting is really there.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (c *Ctx) envGet(key string) (string, bool) {
 	if c.Env == nil {
 		return "", false

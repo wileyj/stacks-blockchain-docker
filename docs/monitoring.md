@@ -22,8 +22,8 @@ docker compose up -d
 | Grafana | http://127.0.0.1:3000 (`GRAFANA_PORT`) | user `admin`, password `GRAFANA_ADMIN_PASSWORD` |
 | Prometheus | http://127.0.0.1:9090 (`PROMETHEUS_PORT`) | targets, rules and alerts |
 
-Both listen on `MONITORING_BIND` (default `127.0.0.1`). To reach them from another machine, prefer an
-SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`) over binding them to a public address.
+Both listen on 127.0.0.1 only, as do the node and signer metrics ports: monitoring is never published
+beyond this host. From another machine, use an SSH tunnel (`ssh -L 3000:127.0.0.1:3000 <host>`).
 
 ## What's collected
 

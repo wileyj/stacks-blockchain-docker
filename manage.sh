@@ -106,7 +106,6 @@ ${VERBOSE} && log "DEFAULT_SERVICES: ${DEFAULT_SERVICES[*]}"
 # The stack is the root compose.yaml (plain `docker compose` works too); this script wraps it.
 #     - flags map to compose profiles (signer, proxy, bns) or the postgres port override file
 COMPOSE_FILE_MAIN="${SCRIPTPATH}/compose.yaml"
-COMPOSE_FILE_PG_PORT="${SCRIPTPATH}/compose.postgres-port.yaml"
 # Containers of a stack started from the old compose-files/ layout (a different compose project)
 LEGACY_PROJECT="compose-files"
 SUPPORTED_FLAGS=(signer proxy postgres bns monitoring)
@@ -279,7 +278,7 @@ check_bns() {
 #     - stacks-blockchain: profiles node + api, plus signer/proxy/monitoring from the flags
 #     - bns: the job's own profile
 #     - all: every profile, used to stop, follow logs and pull
-#     - the postgres flag (or EXPOSE_POSTGRES=true) adds the port override file
+#     - the postgres flag (or EXPOSE_POSTGRES=true) sets POSTGRES_LOCAL=1: postgres on 127.0.0.1 only
 compose_args() {
 	local flags="${1}"
 	local profile="${2}"
@@ -298,7 +297,7 @@ compose_args() {
 	esac
 	COMPOSE_ARGS="--env-file ${ENV_FILE} -f ${COMPOSE_FILE_MAIN}"
 	if [[ " ${flags} " == *" postgres "* || "${EXPOSE_POSTGRES}" == "true" ]]; then
-		COMPOSE_ARGS="${COMPOSE_ARGS} -f ${COMPOSE_FILE_PG_PORT}"
+		export POSTGRES_LOCAL=1
 	fi
 	for p in "${profiles[@]}"; do
 		COMPOSE_ARGS="${COMPOSE_ARGS} --profile ${p}"

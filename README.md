@@ -82,6 +82,10 @@ curl -sL localhost:3999/extended | jq     # stacks-blockchain-api
 curl -sL localhost/v2/info | jq           # through the proxy (proxy profile)
 ```
 
+Everything listens on this host only, except the node's P2P port. To serve the API to other machines,
+add the `proxy` profile (nginx on port 80, optionally HTTPS); see
+[Exposing services](./docs/usage.md#exposing-services).
+
 ## Documentation
 
 - [Requirements](./docs/requirements.md): host, disk, Docker Desktop advice

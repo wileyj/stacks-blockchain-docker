@@ -147,7 +147,7 @@ Key mechanical changes that make most of the defects go away:
 
 ## F. TODOs (owner-requested, deferred)
 
-- **TODO (owner, 2026-10-27): postgres exposure and the network model.** Revisit the optional postgres port (`-f postgres` / `EXPOSE_POSTGRES`, `compose.postgres-port.yaml`): drop it, or move the stack to Docker host networking instead of a project network. Trade-offs are listed in HANDOFF. Decide before the first release.
+- ~~**TODO (owner, 2026-10-27): postgres exposure and the network model.**~~ **Decided 2026-11-05:** local by default, the `proxy` profile serves the API externally, postgres only inside the stack (or `POSTGRES_LOCAL=1` on 127.0.0.1), monitoring never external, no host networking (HANDOFF "Exposure model").
 
 | # | TODO | Added | Evidence |
 |---|---|---|---|

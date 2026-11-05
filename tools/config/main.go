@@ -75,9 +75,35 @@ func run(confRoot string, getenv func(string) string) error {
 			return err
 		}
 	}
+	if err := renderProxy(confRoot, s); err != nil {
+		return err
+	}
 	for _, o := range s.Observers() {
 		fmt.Printf("config: events_observer %s\n", o.(map[string]any)["endpoint"])
 	}
+	return nil
+}
+
+// renderProxy writes conf/nginx/proxy.conf for the proxy profile and removes it otherwise.
+func renderProxy(confRoot string, s Settings) error {
+	dest := filepath.Join(confRoot, "nginx", "proxy.conf")
+	if !s.Profiles["proxy"] {
+		if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if err := writeAtomic(dest, RenderProxy(s), 0o644); err != nil {
+		return err
+	}
+	tls := "HTTP only"
+	if s.ProxyTLS {
+		tls = "HTTPS on 443, HTTP redirects"
+	}
+	fmt.Printf("config: wrote nginx/proxy.conf (%s)\n", tls)
 	return nil
 }
 

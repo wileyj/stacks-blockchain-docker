@@ -1,0 +1,2 @@
+## PROXY_TLS=1: put fullchain.pem and privkey.pem here (or point PROXY_TLS_DIR at them).
+## They are not tracked by git.

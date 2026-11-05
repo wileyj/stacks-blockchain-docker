@@ -38,6 +38,9 @@ type Settings struct {
 	AppScrapeInterval string
 	// Grafana alerting (MONITORING_ALERTS=1) and which contact points are configured
 	Alerts, AlertWebhook, AlertEmail bool
+	// The proxy profile: the API's port inside the network, and HTTPS (PROXY_TLS=1)
+	APIPort  string
+	ProxyTLS bool
 }
 
 var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
@@ -87,6 +90,17 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	if !durationRe.MatchString(s.AppScrapeInterval) {
 		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
 	}
+	s.APIPort = orDefault(getenv("STACKS_BLOCKCHAIN_API_PORT"), "3999")
+	switch v := orDefault(getenv("PROXY_TLS"), "0"); v {
+	case "1":
+		s.ProxyTLS = true
+	case "0":
+	default:
+		return s, fmt.Errorf("PROXY_TLS must be 0 or 1, got %q", v)
+	}
+	if v := orDefault(getenv("POSTGRES_LOCAL"), "0"); v != "0" && v != "1" {
+		return s, fmt.Errorf("POSTGRES_LOCAL must be 0 or 1, got %q", v)
+	}
 	switch v := orDefault(getenv("MONITORING_ALERTS"), "0"); v {
 	case "1":
 		s.Alerts = true
@@ -116,6 +130,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		btc + "RPC_PORT": s.BTCRPCPort, btc + "P2P_PORT": s.BTCP2PPort, "NODE_METRICS_PORT": s.NodeMetricsPort,
 		"STACKS_SIGNER_PORT": s.SignerPort, "SIGNER_METRICS_PORT": s.SignerMetricsPort,
 		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
+		"STACKS_BLOCKCHAIN_API_PORT": s.APIPort,
 	} {
 		if v != "" {
 			if _, err := strconv.ParseUint(v, 10, 32); err != nil {

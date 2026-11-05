@@ -56,12 +56,26 @@ Getting `sbd`:
 | `node` | stacks-node | |
 | `api` | Stacks Blockchain API and postgres | The node delivers events to the API, so a configured API is a liveness dependency of the node |
 | `signer` | stacks-signer | Needs `SIGNER_PRIVATE_KEY` (testnet: `TESTNET_SIGNER_PRIVATE_KEY`) |
-| `proxy` | nginx on port 80 | |
+| `proxy` | nginx on ports 80/443, on all interfaces | **The way to serve the API to other machines** (see below) |
 | `monitoring` | Prometheus, Grafana, exporters on 127.0.0.1 | Set `GRAFANA_ADMIN_PASSWORD` first; see [Monitoring](./monitoring.md) |
 
 The default is `node,api`; `node` alone runs a follower without the API. After removing a profile, stop
 with `docker compose --profile '*' down` (or `sbd stop`): a plain `up` or `down` leaves the removed
 profile's containers running.
+
+## Exposing services
+
+By default everything listens on this host only (`127.0.0.1`), except the node's P2P port, which is
+public so other nodes can connect: `curl localhost:20443/v2/info` and `curl localhost:3999/extended`
+work on the host itself, and other machines are refused.
+
+| To | Do |
+|---|---|
+| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): nginx on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
+| ... over HTTPS | `PROXY_TLS=1`, with `fullchain.pem` and `privkey.pem` in `PROXY_TLS_DIR` (default `./conf/nginx/tls`); port 80 then redirects to 443 |
+| Reach the database from tools on this host | `POSTGRES_LOCAL=1`: published on `127.0.0.1:5432` (`POSTGRES_LOCAL_PORT`). It can't be published beyond this host: the API is its only client. Ad hoc: `docker compose exec postgres psql -U postgres` |
+| Publish the API or RPC port directly | `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0` (`sbd doctor` flags it) |
+| See metrics, Prometheus or Grafana from elsewhere | an SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 <host>`: they're never published beyond this host |
 
 ## Stopping
 

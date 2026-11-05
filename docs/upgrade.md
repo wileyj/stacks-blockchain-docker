@@ -62,4 +62,14 @@ two changes, and `sbd migrate` makes them without moving any data (`sbd plan mig
 Stop a stack started with the old layout with `./manage.sh -n <network> -a stop` before starting the
 new one.
 
+## Breaking: services listen on this host only
+
+The API (3999) and the node RPC (20443) used to be published on every interface. They now listen on
+`127.0.0.1` only; the node's P2P port stays public. If other machines use your API, add the `proxy`
+profile (nginx, optionally with HTTPS), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
+`EXPOSE_POSTGRES` and `compose.postgres-port.yaml` are replaced by `POSTGRES_LOCAL=1`, which publishes
+postgres on 127.0.0.1 only (it can no longer be published beyond this host), and
+`METRICS_BIND_ADDR` / `MONITORING_BIND` are gone: monitoring is never published beyond this host.
+`sbd migrate` lists the settings that changed. See [Exposing services](./usage.md#exposing-services).
+
 _API event replay (`-a export` / `-a import`) was removed: the archive snapshots replace it._

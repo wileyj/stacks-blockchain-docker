@@ -284,21 +284,16 @@ Sized from the Run A soak (5,859 series, 186 samples/s, 42 MB/day; the rules and
 - **Guards:** `TestKeepListsCoverRulesAndDashboards` fails if a rule or panel uses an infrastructure metric its keep-list drops; the config image's build context now includes the rules and dashboards for it.
 - **Verified** on a testnet `node,api,monitoring` scratch stack: all targets up, app jobs every 15 s, the others every 30 s; every dashboard panel and rule query returns data (the only empty ones are the signer, not enabled, and alerts not firing); **860 series** in total (node 55, API 256, infrastructure 546; was about 5,860 on mainnet, 5,392 of them infrastructure). Projection for mainnet: about 0.6 GB for 30 days.
 
-## Deferred: postgres exposure and the network model (owner, 2026-10-27)
+## Exposure model: decided and done (owner, 2026-11-05)
 
-Today postgres is reachable from the host only through the optional `-f postgres` / `EXPOSE_POSTGRES=true` override (`compose.postgres-port.yaml`, bound to 127.0.0.1). The owner wants to revisit this:
-- **Option A: drop the flag** and keep postgres internal; anyone needing it uses `docker compose exec postgres psql` or a tunnel.
-- **Option B: Docker host networking** (`network_mode: host`) instead of the project network.
-
-Trade-offs to weigh for B:
-- **What gets simpler:** no per-port publishing, so flags like this one go away.
-- **Bind addresses become the only protection.** Every listening port is on the host directly, so each service's own setting has to be right: `rpc_bind`, `prometheus_bind`, the API's `STACKS_*_HOST`, postgres `listen_addresses`, Prometheus and Grafana. A wrong default would be publicly reachable.
-- **Service-name DNS is lost** (`stacks-blockchain-api:3700`, `postgres`, `prometheus`, `node-exporter`, ...). The renderer, observers, scrape targets and the API's DB host would move to `127.0.0.1:<port>`.
-- **Port clashes:** two services can't share a port, as the API and the node do today with 9153 for metrics.
-- **Portability:** on Linux it's native. On Docker Desktop, host networking is a newer opt-in feature, which matters for tier-1 macOS (Q18).
-- **Container names** and the `DOCKER_NETWORK` contract (§A.19–20) would change.
-
-Decide before the first release; it affects compose.yaml, the renderer, the monitoring targets and the docs.
+Local by default; exposing a service is an explicit opt-in in `.env`. No host networking.
+- **API (3999), node RPC (20443):** `API_BIND_ADDR` / `RPC_BIND_ADDR`, default `127.0.0.1` (**breaking**: they were on all interfaces). `curl localhost:…` works on the host; other machines are refused.
+- **Node P2P (20444):** public, for inbound peers.
+- **Serving the API to other machines:** the `proxy` profile (nginx `1.30.5-alpine`, pinned now), public on `PROXY_BIND_ADDR` (default `0.0.0.0`), ports 80/443. `PROXY_TLS=1`: HTTPS with `fullchain.pem`/`privkey.pem` from `PROXY_TLS_DIR` (own certificates; ACME possibly later), HTTP redirects, `/status` stays on HTTP for the healthcheck. The config job renders `conf/nginx/proxy.conf`. The API answers the node's `/v2/*` too.
+- **Postgres:** reachable only inside the stack; the API is its only client ("nothing good can come from" remote access). `POSTGRES_LOCAL=1` publishes it on `127.0.0.1:POSTGRES_LOCAL_PORT` through a small nginx stream proxy (`postgres-local`, `deploy.replicas`), with no setting for any other address. Replaces `compose.postgres-port.yaml` and `EXPOSE_POSTGRES` (`manage.sh -f postgres` and `EXPOSE_POSTGRES=true` map to it).
+- **Metrics, Prometheus, Grafana:** always `127.0.0.1` (`METRICS_BIND_ADDR`, `MONITORING_BIND` removed: never exposed externally); SSH tunnel from elsewhere.
+- `sbd doctor` warns when the API or RPC is bound beyond localhost; `sbd migrate` explains the removed settings and the new default.
+- **Verified live** (testnet scratch, TLS with a self-signed cert): bindings as above; API/RPC 200 on localhost and refused from the LAN; the proxy over another host address: `/status` ok, HTTP → 301 → HTTPS, API and `/v2/info` 200, our certificate; metrics refused from the LAN; `POSTGRES_LOCAL=1` psql via 127.0.0.1 works and LAN refused, `=0` removes the proxy. On this host the LAN address's 80/443 are taken by an unrelated Traefik (local Kubernetes ingress).
 
 ## Fork repo settings and branch model (applied 2026-10-27 on `wileyj/stacks-blockchain-docker`)
 
