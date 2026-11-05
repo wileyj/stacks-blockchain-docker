@@ -80,3 +80,13 @@ func TestCreateDatabaseStatement(t *testing.T) {
 		t.Errorf("a dump of another database must fail")
 	}
 }
+
+func TestOnTable(t *testing.T) {
+	def := `CREATE INDEX nft_events_asset_identifier_index ON "public".nft_events USING hash (asset_identifier) WHERE (asset_event_type_id = 2);`
+	if got := onTable(def); got != `"public".nft_events` {
+		t.Errorf("onTable = %q", got)
+	}
+	if got := onTable("garbage"); got != "" {
+		t.Errorf("no table: %q", got)
+	}
+}

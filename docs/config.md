@@ -79,7 +79,7 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `STACKS_CORE_RPC_HOST`       | FQDN of the Stacks Blockchain service for RPC proxy requests                                                | `stacks-blockchain`                        |
 | `STACKS_CORE_RPC_PORT`       | RPC port of the Stacks Blockchain service                                                                   | `20443`                                    |
 | `STACKS_CORE_P2P_PORT`       | P2P port of the Stacks Blockchain service                                                                   | `20444`                                    |
-| `API_OBSERVER_TIMEOUT_MS`    | Timeout (ms) for the node's event delivery to the API. The node retries a failed delivery with a backoff of up to 3x this value, so it also bounds how long the node stays blocked after the API comes back. Written to `timeout_ms` of the API `[[events_observer]]` in `Config.toml` on every start | `60000` |
+| `API_OBSERVER_TIMEOUT_MS`    | Timeout (ms) for the node's event delivery to the API. The node retries a failed delivery with a backoff of up to 3x this value, so it also bounds how long the node stays blocked after the API comes back. Written to `timeout_ms` of the API `[[events_observer]]` in `Config.toml` on every start. Measured on mainnet (2026-11): the genesis block takes the API about 38 s, every later block at most 12 s, so keep it at 60 s or more | `60000` |
 
 #### Options commented out by default
 

@@ -244,6 +244,14 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
+## Phase 5: soak (started 2026-11-03, in progress)
+
+Owner, 2026-11-03: a 7-day Run A, then review; a genesis-sync Run B only until past the heavy blocks (Q26), not for days. Details in 15 "Phase 5".
+- **Run A** (`/stacks/temp/sbd-soak-a`, mainnet node,api,monitoring, snapshot 20261103, `2f5cb31`): at the tip since 2026-11-04 01:08; through the prepare phase at lag ≤ 1, 0 restarts. Still to come: cycle 147 (burn 974 750, about 2026-11-06 03:30), a graceful restart and a 15-min API outage after it, the 7-day report (2026-11-10). The deferred NFT index is rebuilding after the deadlock (below).
+- **Run B** (`/stacks/temp/sbd-soak-b`, genesis sync): stopped after milestone 3 at height 334 506. **Q26 resolved**: genesis block 37.8 s, everything after ≤ 12 s, all 347 105 deliveries 200. Data kept until the owner decides.
+- **Fixed from the soak:** `2f5cb31` seed restores without `pg_restore --create` (the 20261103 dump's `ALTER ROLE hirosystems IN DATABASE`); `6f03efc` seed runs `vacuumdb --analyze-only` (12–15 s per `/new_block` without statistics); `build-indexes` warns not to VACUUM/ANALYZE the table during the build (a manual ANALYZE deadlocked the build after 21.8 h; the retry worked as designed); `sbd` hides secret values; API pin 9.7.1 (`980516f`; the snapshots since 20261027 are 9.7.1).
+- **Owner, 2026-11-03:** the job images (config, seed, pg-upgrade) are always built locally by compose, for security; they are not published.
+
 ## Phase 4: release pipeline and docs (2026-11-02)
 
 Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (release publishing only; still no branch-pushing or PR-opening jobs).
@@ -254,7 +262,7 @@ Owner, 2026-11-02: "for ci, contents write and packages write is acceptable" (re
 - **First release `v0.1.0-rc.1`** (signed tag on `152c3ea`, 2026-11-02): all three jobs passed. The Release is a prerelease with `sbd-v0.1.0-rc.1-linux-amd64` and `SHA256SUMS` (checksum verified, binary prints `sbd v0.1.0-rc.1`); `ghcr.io/wileyj/sbd:v0.1.0-rc.1` (amd64) pulls anonymously (public) and prints the same; no `latest` for the prerelease. (15 "Phase 4")
 - **Deferred (owner, 2026-11-02): tag protection, to revisit against best practices** (who may push `v*` tags, signed tags, immutable releases, provenance/attestations). The `latest` tag is not a concern.
 - **Docs rewrite, two equal paths:** README leads with plain Compose and `sbd` side by side (quickstart table, seed, services), drops the aria2 build guide and the `manage.sh` quickstart; `docs/usage.md` is task-first (table, services, stop, logs, reset, seed, pg-upgrade, BNS, getting `sbd`) with `manage.sh` as a deprecated appendix mapping old commands; `upgrade.md` gains PostgreSQL majors and old-layout installs; `issues.md`, `docker.md`, `config.md`, `monitoring.md` lose the stale `manage.sh`/`sudo`/deleted-script instructions.
-- **Open:** whether to also publish the job images (config, seed, pg-upgrade), which compose builds locally today.
+- **Decided (owner, 2026-11-03):** the job images (config, seed, pg-upgrade) are not published; compose always builds them locally, for security.
 
 ## Phase 3d: `pg-upgrade` job and `sbd db upgrade`, done (2026-11-02)
 

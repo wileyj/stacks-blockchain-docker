@@ -43,7 +43,8 @@ Get `sbd` from the repo's [GitHub Releases](https://github.com/stx-labs/stacks-b
 
 ## Seed from the Hiro archive instead of syncing from genesis
 
-A sync from genesis takes days. The `seed` job restores the chainstate and the API database from a
+A sync from genesis takes weeks on mainnet: a test node reached height 334,000 of about 9.4 million in
+41 hours (2026-11). The `seed` job restores the chainstate and the API database from a
 [Hiro Archive](https://docs.hiro.so/hiro-archive) snapshot instead. It runs in a container, so the host
 needs nothing but Docker.
 
@@ -66,7 +67,8 @@ docker compose up -d
   Set `SEED_DEFER_INDEXES=nft_events_asset_identifier_index` in `.env` (or pass `--defer-index`): the
   stack then starts as soon as everything else is restored, about 2 hours, and the `build-indexes` job
   builds that index in the background while the API runs. Until it finishes, NFT-mint queries by asset
-  identifier are slow.
+  identifier are slow. **Don't run `VACUUM` or `ANALYZE` on `nft_events` while it builds**: postgres
+  cancels the build as a deadlock and it starts over.
 
 ## Accessing the services
 

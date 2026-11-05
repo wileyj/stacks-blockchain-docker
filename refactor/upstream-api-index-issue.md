@@ -163,6 +163,11 @@ running, so the cache state varies between rows: compare orders of magnitude, no
 - Trade-off: until the build finishes, `getNftMints` (NFT mints by asset identifier) may be slow;
   everything else is unaffected.
 
+- **Fragile while it builds:** a `VACUUM` or `ANALYZE` of `nft_events` during the deferred
+  `CREATE INDEX CONCURRENTLY` deadlocks with the build's final phase, and postgres cancels the build.
+  On the 2026-11-04 mainnet soak a manual `ANALYZE` did this after 21.8 h; `build-indexes` retried from
+  zero. The job now warns, and the docs say not to. Another reason the index should be cheap to build.
+
 ## To verify before filing upstream
 
 - [x] Build time of the proposed partial B-tree index on the same mainnet data: **33 s** (38 s with `block_height DESC`).
@@ -172,7 +177,8 @@ running, so the cache state varies between rows: compare orders of magnitude, no
       per-insert chain walk is still inferred, not traced).
 - [ ] Measure insert cost into `nft_events` for a hot identifier with and without the hash index.
 - [x] Final build time of the hash index from the deferred build: **19 h 25 m 39 s**.
-- [ ] Check whether newer API releases already changed this index.
+- [ ] Check whether newer API releases already changed this index. *API 9.7.1 (the 20261103 dump) still
+      has it, unchanged.*
 
 ## Related observation (separate topic)
 

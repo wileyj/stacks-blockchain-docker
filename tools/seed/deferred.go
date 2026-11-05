@@ -137,6 +137,13 @@ func runBuildIndexes(ctx context.Context, args []string, getenv func(string) str
 			}
 		}
 		fmt.Printf("build-indexes: building %s (CONCURRENTLY; the API keeps running)\n", name)
+		// A VACUUM or ANALYZE of the same table waits for the build's lock while the build's last phase
+		// waits for it: postgres cancels the build as a deadlock and the job starts over (refactor/15
+		// "Phase 5": 21.8 h of work lost on mainnet)
+		if table := onTable(def); table != "" {
+			fmt.Printf("build-indexes: this can take many hours (about 19 h for the mainnet NFT index). Until it is done, "+
+				"don't run VACUUM or ANALYZE on %s: that cancels the build and it starts over\n", table)
+		}
 		if _, err := psql("SET statement_timeout = 0", "SET maintenance_work_mem = '1GB'", Concurrently(def)); err != nil {
 			return err
 		}
@@ -149,6 +156,15 @@ func runBuildIndexes(ctx context.Context, args []string, getenv func(string) str
 		return err
 	}
 	return nil
+}
+
+// onTable returns the table a CREATE INDEX statement builds on ("schema.table"), or "".
+func onTable(def string) string {
+	m := regexp.MustCompile(`\bON (?:ONLY )?(\S+)`).FindStringSubmatch(def)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }
 
 // onIndexName returns the schema-qualified index name for DROP INDEX: the index lives in the same
