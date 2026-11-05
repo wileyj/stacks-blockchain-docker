@@ -38,7 +38,7 @@ Getting `sbd`:
   GitHub Releases, check it, and put it on your `PATH`:
   `sha256sum -c --ignore-missing SHA256SUMS`, and (with the GitHub CLI) its build provenance:
   `gh attestation verify sbd-<version>-linux-amd64 --repo <owner>/stacks-blockchain-docker`, which
-  shows it was built by the release workflow from the signed tag. Releases can't be changed once
+  shows it was built by the release workflow from a signed release tag. Releases can't be changed once
   published.
 - **Container image** (linux/amd64 for now), no install: run it from the checkout with the Docker
   socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:

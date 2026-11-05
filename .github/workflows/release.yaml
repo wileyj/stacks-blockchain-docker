@@ -4,7 +4,8 @@
 ## For now Linux x86-64 only (owner, 2026-11-02); the code also builds for darwin, windows, freebsd and
 ## arm64, so more targets are a matter of the lists below.
 ## Protection (owner, 2026-11-05): a tag ruleset lets only the repo admin create, move or delete v* tags;
-## the tag must be signed by a key in .github/release-signers.asc (checked first); releases are
+## the tag must carry a signature GitHub verifies (a GPG or SSH key on the tagger's GitHub account,
+## checked first, so no keys live in the repo and any maintainer can release); releases are
 ## immutable once published; the binary, SHA256SUMS and the image carry build provenance attestations
 ## (gh attestation verify <file> --repo <owner>/<repo>).
 name: Release
@@ -29,17 +30,20 @@ jobs:
         working-directory: tools/sbd
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      ## checkout leaves the tag as a plain ref: fetch the tag object itself, then check its signature
-      - name: verify the tag is signed by an allowed key
+      ## checkout leaves the tag as a plain ref: fetch the tag object, then ask GitHub whether its
+      ## signature verifies against a key registered on the tagger's GitHub account
+      - name: verify the tag is signed (GitHub-verified signature)
         working-directory: .
         env:
           TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --force --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
-          [ "$(git cat-file -t "refs/tags/${TAG}")" = tag ] || { echo "::error::${TAG} is not an annotated, signed tag"; exit 1; }
-          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME
-          gpg --batch --quiet --import .github/release-signers.asc
-          git verify-tag "${TAG}" || { echo "::error::${TAG} is not signed by a key in .github/release-signers.asc"; exit 1; }
+          obj=$(git rev-parse "refs/tags/${TAG}")
+          [ "$(git cat-file -t "${obj}")" = tag ] || { echo "::error::${TAG} is a lightweight tag: create release tags with git tag -s"; exit 1; }
+          read -r verified reason < <(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj}" --jq '"\(.verification.verified) \(.verification.reason)"')
+          [ "${verified}" = true ] || { echo "::error::${TAG} has no GitHub-verified signature (${reason}): sign it with a key added to your GitHub account"; exit 1; }
+          echo "${TAG}: signature verified by GitHub"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.25"
