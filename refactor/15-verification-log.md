@@ -438,6 +438,21 @@ All 347 105 deliveries returned 200; the node logged no delivery retries; 0 rest
 
 **Q26 resolved:** the 60 s API observer timeout holds across history; the worst case is the genesis block at 37.8 s (63%), the next 12.0 s.
 
+### Phase 4 release protections — GitHub Actions, 2026-11-06 [V]
+
+Signed tag `v0.1.0-rc2` on `08895d0` (PR #8 merged), pushed by the owner. `release.yaml` run 42299161440: all three jobs succeeded.
+
+| Check | Result |
+|---|---|
+| Tag ruleset (`v*` restricted to the admin) | the owner's push went through (admin bypass) |
+| Signature check | "v0.1.0-rc2: signature verified by GitHub" (the tag object's `verification.verified`) |
+| Release | prerelease, **immutable**; `sbd-v0.1.0-rc2-linux-amd64` + `SHA256SUMS`; checksum OK; prints `sbd v0.1.0-rc2` |
+| Binary provenance | `gh attestation verify sbd-v0.1.0-rc2-linux-amd64 --repo wileyj/stacks-blockchain-docker`: exit 0; SLSA provenance v1, built by `release.yaml` at `refs/tags/v0.1.0-rc2`, commit `08895d0` |
+| Image provenance | `gh attestation verify oci://ghcr.io/wileyj/sbd:v0.1.0-rc2`: exit 0, same workflow and ref |
+| Negative | an unattested file: exit 1 |
+
+`gh attestation verify` prints nothing when stdout isn't a terminal; the exit code (and `--format json`) carry the result.
+
 ### Phase 4 first release — GitHub Actions, 2026-11-02 [V]
 
 Signed tag `v0.1.0-rc.1` on `152c3ea` (PR #6 merged), pushed with an explicit refspec. `release.yaml` run 41523724767: `build sbd binaries`, `publish the GitHub Release`, `publish the sbd image (linux/amd64)` all succeeded.
