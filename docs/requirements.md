@@ -31,8 +31,10 @@ Put the data on a dedicated disk with `DATA_ROOT`, or per component with `STACKS
 ## Bitcoin node
 
 A Stacks node follows Bitcoin over its P2P port (8333 on mainnet). **Run your own Bitcoin node if at all
-possible** and point `BTC_HOST` / `BTC_P2P_PORT` at it: a pruned `bitcoind` is enough, and a node on the
-same host or LAN syncs Bitcoin headers in about a minute. The default, `bitcoin.mainnet.stacks.org`, is
+possible** and point `BTC_HOST` / `BTC_P2P_PORT` at it; a node on the same host or LAN syncs Bitcoin
+headers in about a minute. It must still have the blocks the Stacks node needs: everything from Bitcoin
+block 666 050 (Stacks genesis) for a sync from genesis, or from the snapshot's height after a seed, so
+an unpruned `bitcoind` is the safe choice; a pruned one works only if its window covers that range. The default, `bitcoin.mainnet.stacks.org`, is
 a single public peer shared by many Stacks nodes; it often turns connections away, and the node then
 retries (16, 32, 60 s ...), so a first sync from it can take much longer. No RPC credentials are needed.
 
