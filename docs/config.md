@@ -32,12 +32,11 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | ------------------------------- | ----------------------------------------------------- | ------------------------- |
 | `VERBOSE`                       | Enables verbose logging in the deprecated `./manage.sh` | `false`                 |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
-| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: `node`, `api` (API + postgres), `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it; the deprecated `./manage.sh` selects them with `-f` per run instead | `node,api` |
+| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: always `node` and `api` (API + postgres), plus any of `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it; the deprecated `./manage.sh` selects them with `-f` per run instead | `node,api` |
 | `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
 | `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
 | `API_BIND_ADDR`, `RPC_BIND_ADDR` | Host address the API (3999) and the node RPC (20443) are published on. To serve the API to other machines, prefer the `proxy` profile | `127.0.0.1` |
-| `PROXY_BIND_ADDR`, `NGINX_PROXY_PORT`, `NGINX_PROXY_TLS_PORT` | The `proxy` profile (nginx), the way to serve the API to other machines | `0.0.0.0`, `80`, `443` |
-| `PROXY_TLS`, `PROXY_TLS_DIR`    | `1`: HTTPS on `NGINX_PROXY_TLS_PORT` with `fullchain.pem` and `privkey.pem` from `PROXY_TLS_DIR`; HTTP redirects to it | `0`, `./conf/nginx/tls` |
+| `PROXY_BIND_ADDR`, `NGINX_PROXY_PORT` | The `proxy` profile (nginx, HTTP), the way to serve the API to other machines. HTTPS: terminate it in front (a CDN proxy, a load balancer) | `0.0.0.0`, `80` |
 | `POSTGRES_LOCAL`, `POSTGRES_LOCAL_PORT` | `1` publishes postgres on `127.0.0.1:POSTGRES_LOCAL_PORT` for local tools. It is never published beyond this host: only the API uses it | `0`, `5432` |
 | `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `PROMETHEUS_APP_SCRAPE_INTERVAL`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md). Always on 127.0.0.1 | `9090`, `3000`, empty, `30d`, `15s`, `1`, `1` |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |

@@ -84,8 +84,9 @@ func TestPlans(t *testing.T) {
 		{"start creates .env", "-", []string{"start"}, "cp sample.env .env\ndocker compose up -d\n", 0},
 		{"start testnet with monitoring", sampleEnv, []string{"start", "--network", "TESTNET", "--with", "monitoring"},
 			"edit .env: NETWORK=testnet\nedit .env: COMPOSE_PROFILES=node,api,monitoring\ndocker compose up -d\n", 0},
-		{"start node only", sampleEnv, []string{"start", "--without=api"}, "edit .env: COMPOSE_PROFILES=node\ndocker compose up -d\n", 0},
-		{"start exact profiles", sampleEnv, []string{"start", "--profiles", "node,proxy"}, "edit .env: COMPOSE_PROFILES=node,proxy\ndocker compose up -d\n", 0},
+		{"node and api always run", sampleEnv, []string{"start", "--without=api"}, "", 2},
+		{"start exact profiles", sampleEnv, []string{"start", "--profiles", "node,api,proxy"}, "edit .env: COMPOSE_PROFILES=node,api,proxy\ndocker compose up -d\n", 0},
+		{"exact profiles without api", sampleEnv, []string{"start", "--profiles", "node,proxy"}, "", 2},
 		{"start signer without key", sampleEnv, []string{"start", "--with", "signer"}, "", 2},
 		{"start signer with key", strings.Replace(sampleEnv, "SIGNER_PRIVATE_KEY=\n", "SIGNER_PRIVATE_KEY=ab01\n", 1), []string{"start", "--with", "signer"},
 			"edit .env: COMPOSE_PROFILES=node,api,signer\ndocker compose up -d\n", 0},
@@ -176,11 +177,11 @@ func TestStartEditsEnvAndRefusesWhileRunning(t *testing.T) {
 func TestStartCreatesEnv(t *testing.T) {
 	dir := project(t, "-")
 	d := &fakeDocker{}
-	if code, _, errOut := sbd(t, dir, d, "start", "--without", "api"); code != 0 {
+	if code, _, errOut := sbd(t, dir, d, "start", "--with", "proxy"); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, ".env"))
-	if !strings.Contains(string(b), "## comment kept\n") || !strings.Contains(string(b), "COMPOSE_PROFILES=node\n") {
+	if !strings.Contains(string(b), "## comment kept\n") || !strings.Contains(string(b), "COMPOSE_PROFILES=node,api,proxy\n") {
 		t.Errorf(".env:\n%s", b)
 	}
 }

@@ -14,21 +14,22 @@ The TUI is a **client**. It must never reimplement lifecycle logic (ordered stop
 
 ## 1. `sbd init`
 
-**Implemented 2026-11-05** (`tools/sbd/init.go`), as below; the original plan is in git history.
+**Implemented 2026-11-05, revised 2026-11-06** with the owner, step by step (`tools/sbd/init.go`):
 
-| Step | Asks / does | Validation | Writes |
-|---|---|---|---|
-| Preflight | The `sbd doctor` checks; stops on a failure (Compose, engine, compose project) | — | — |
-| Network | mainnet / testnet | re-asked until valid | `NETWORK` |
-| Services | API (and postgres), signer, proxy (only with the API), monitoring | — | `COMPOSE_PROFILES` |
-| Signer | Private key, masked on a terminal | 64 hex chars, optionally `01`; re-asked | `SIGNER_PRIVATE_KEY` / `TESTNET_SIGNER_PRIVATE_KEY` |
-| Auth token | Generated when it is the sample's `1234` or empty | — | `AUTH_TOKEN` |
-| Bitcoin | Host and P2P port (defaults from `.env`/`sample.env`) | TCP connect test, a warning only | `BTC_*` / `TBTC_*` |
-| Data location | `DATA_ROOT` | the `doctor` disk check for the chosen services | `DATA_ROOT` |
-| Proxy | HTTPS?, and the certificate directory | warns if `fullchain.pem`/`privkey.pem` are missing | `PROXY_TLS`, `PROXY_TLS_DIR` |
-| Generated secrets | Grafana admin password (monitoring); `PG_PASSWORD` only when no database exists yet | — | `GRAFANA_ADMIN_PASSWORD`, `PG_PASSWORD` |
-| Review | Every change, secrets as `<hidden>`; confirm, then write (`.env.save` backup) | — | `.env` |
-| Bootstrap and start | seed now / genesis / later; optionally start (`--start`) | the commands' own guards | runs `sbd seed` / `sbd start` |
+| Step | Asks / does | Why |
+|---|---|---|
+| Preflight | The `sbd doctor` checks, as **warnings only** | Writing `.env` doesn't depend on Docker working; the user still learns what to fix |
+| Network | mainnet / testnet; Enter keeps the existing one, else **mainnet** | One network per host; a re-run must not switch it silently |
+| Services | **node and API always** (owner: "at a minimum, the api and stacks-node"); signer (**off by default**), proxy, monitoring optional | `COMPOSE_PROFILES`; `sbd` refuses a set without node and api |
+| Signer (only if on) | Explains what it implies (node config change, liveness dependency, on-chain registration, key custody, uptime), confirms, then the key masked and format-checked | The signer needs specific config and a private key: only asked when wanted |
+| Auth token | Generated when it is the sample's `1234` or empty | The node/signer shared secret and the node's privileged RPC guard; `1234` is public |
+| Bitcoin | Host and **P2P** port; a real **Bitcoin P2P handshake** (`version` with the network's magic), showing the peer's agent and height; up to 3 tries | Only P2P matters for a follower; a TCP connect accepts anything listening |
+| Data location | `DATA_ROOT`, then the disk check | Mainnet needs about 1.15 TB; signer data lives there too and belongs in backups |
+| Proxy | HTTP on port 80 only; **no TLS** (owner: certificates are out of scope; terminate HTTPS in front, e.g. a CDN proxy) | Follow-up: HTTPS on 443 should become the default |
+| Generated secrets | Grafana admin password (monitoring); `PG_PASSWORD` only when no database exists yet | Generated **silently**, listed at the end |
+| Review and write | Every change, secrets as `<hidden>`; confirm; `.env` written with a backup | Nothing written without confirmation |
+| Bootstrap | Chainstate exists: **keep** (default), or delete it and seed / resync from genesis. None: **seed** (default) or genesis. Running a seed or a reset then needs **its own yes** (default no): the choice alone never starts a 360 GB download or deletes data | A re-run (to add a signer, change the BTC peer) must keep existing data |
+| Start | Optional; then **notes like a Helm chart's**: how to read each generated secret (`sbd env get`, or `grep` for plain Compose), where the API, RPC, proxy and Grafana are, what's next | Secrets never printed on the way |
 
 It works non-interactively from an answers file (`sbd init --from answers.env`, KEY=VALUE as in `.env`; `SBD_INIT_BOOTSTRAP=seed|genesis|later` answers the bootstrap step) and with `--yes` (defaults, generated secrets); without a terminal it requires one of them. It writes only `.env`, so it never becomes the only way to configure the node.
 

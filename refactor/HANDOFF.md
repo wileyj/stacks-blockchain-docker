@@ -244,9 +244,14 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
-## Phase 6: `sbd init`, done (2026-11-05)
+## Phase 6: `sbd init`, done (2026-11-05, revised 2026-11-06)
 
-Owner, 2026-11-05: "init", not "wizard"; still needed. `tools/sbd/init.go`, spec in 13 §1 (updated to what is implemented): preflight → network → services → signer key (masked, validated) → generated `AUTH_TOKEN` (replaces `1234`) → Bitcoin peer (connect test) → data location (disk check) → proxy TLS → generated Grafana and (new database only) postgres passwords → review with secrets hidden → write `.env` → seed/genesis/later, optional start. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env`. New dependency: `golang.org/x/term` (masked input). Verified with scripted tests and in a pseudo-terminal (`script`): the key wasn't echoed, the review hid every secret. `sbd ui` (the dashboard) is not started.
+Owner, 2026-11-05: "init", not "wizard"; still needed. Walked through step by step with the owner on 2026-11-06; the steps and their reasons are in 13 §1. Highlights: preflight warns only; Enter keeps the existing network, else mainnet; node and API always run, signer off by default and explained before its key is asked; a real Bitcoin P2P handshake; no TLS in the proxy (port 80 only); generated secrets listed at the end like Helm notes; an existing chainstate is kept unless the user asks to seed or resync. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env` (then optionally runs seed/reset/start). Dependency: `golang.org/x/term`. `sbd ui` not started.
+
+**Follow-ups from the walk-through:**
+- **HTTPS on 443 as the default** (owner): TLS was removed from the proxy for now; revisit the options (ACME, a CDN, ...).
+- **Enforce node + API in the config job** too (Q19 revised): it fails CI's `compose-only boot (mainnet node)`, a required check, so the CI matrix and the branch ruleset change together.
+- **The default mainnet Bitcoin peer `bitcoin.mainnet.stacks.org:8333` refuses P2P handshakes**: it accepts TCP and closes the connection at once, for every variant tried (2026-11-06). New installs following the default depend on it (P1 saw slow, dropped header syncs). Review the default with whoever runs it.
 
 ## Phase 5: soak (started 2026-11-03, in progress)
 

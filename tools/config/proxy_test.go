@@ -9,35 +9,20 @@ import (
 
 func TestRenderProxy(t *testing.T) {
 	kv := baseEnv("mainnet", "node,api,proxy")
+	kv["STACKS_BLOCKCHAIN_API_PORT"] = "3998"
 	s, err := SettingsFromEnv(env(kv))
 	if err != nil {
 		t.Fatal(err)
 	}
-	http := string(RenderProxy(s))
-	for _, want := range []string{"server stacks-blockchain-api:3999;", "listen 80;", "location /status", "proxy_pass http://stacks-blockchain-api/;"} {
-		if !strings.Contains(http, want) {
-			t.Errorf("HTTP proxy lacks %q:\n%s", want, http)
+	out := string(RenderProxy(s))
+	for _, want := range []string{"server stacks-blockchain-api:3998;", "listen 80;", "location /status", "proxy_pass http://stacks-blockchain-api/;"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("proxy lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(http, "443") || strings.Contains(http, "return 301") {
-		t.Errorf("no TLS unless PROXY_TLS=1:\n%s", http)
-	}
-
-	kv["PROXY_TLS"], kv["STACKS_BLOCKCHAIN_API_PORT"] = "1", "3998"
-	s, _ = SettingsFromEnv(env(kv))
-	tls := string(RenderProxy(s))
-	for _, want := range []string{"server stacks-blockchain-api:3998;", "listen 443 ssl;", "/etc/nginx/tls/fullchain.pem", "/etc/nginx/tls/privkey.pem", "return 301 https://$host$request_uri;"} {
-		if !strings.Contains(tls, want) {
-			t.Errorf("TLS proxy lacks %q:\n%s", want, tls)
-		}
-	}
-	// /status stays on plain HTTP (the healthcheck), before the redirect
-	if i, j := strings.Index(tls, "location /status"), strings.Index(tls, "return 301"); i < 0 || i > j {
-		t.Errorf("/status must be served on port 80:\n%s", tls)
-	}
-	kv["PROXY_TLS"] = "yes"
-	if _, err := SettingsFromEnv(env(kv)); err == nil {
-		t.Errorf("PROXY_TLS must be 0 or 1")
+	// HTTPS is terminated in front of the proxy (owner, 2026-11-06)
+	if strings.Contains(out, "443") || strings.Contains(out, "ssl") {
+		t.Errorf("no TLS in the proxy:\n%s", out)
 	}
 }
 

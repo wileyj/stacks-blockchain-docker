@@ -32,7 +32,7 @@ for n in mainnet testnet; do
 		export COMPOSE_PROFILES="${profiles}"
 		check "root ${n} ${profiles}" -f "${REPO}/compose.yaml"
 	done
-	COMPOSE_PROFILES=node,api,proxy PROXY_TLS=1 POSTGRES_LOCAL=1 check "root ${n} node,api,proxy (TLS), POSTGRES_LOCAL=1"
+	COMPOSE_PROFILES=node,api,proxy POSTGRES_LOCAL=1 check "root ${n} node,api,proxy, POSTGRES_LOCAL=1"
 done
 unset COMPOSE_PROFILES
 

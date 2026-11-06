@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -115,10 +115,11 @@ func randomHex(n int) string {
 
 // initState collects the edits: the values .env will have, starting from .env or sample.env.
 type initState struct {
-	c       *Ctx
-	answers map[string]string // --from
-	edits   []Step
-	values  map[string]string
+	c         *Ctx
+	answers   map[string]string // --from
+	edits     []Step
+	values    map[string]string
+	generated []string // keys whose values init chose (listed at the end, never shown)
 }
 
 func (st *initState) get(key string) string {
@@ -179,6 +180,11 @@ func initRun(c *Ctx, args []string) (int, error) {
 }
 
 // runInit is init with its prompter and answers injected (tests drive it directly).
+//
+// Decisions (owner, 2026-11-06): preflight only warns; the network defaults to the existing one, else
+// mainnet; the node and the API always run, the signer (off by default), the proxy and monitoring are
+// optional; the Bitcoin peer is checked with a real P2P handshake; generated secrets are listed at the
+// end, never shown on the way; an existing chainstate is kept unless the user asks to seed or resync.
 func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, error) {
 	st := &initState{c: c, answers: answers, values: map[string]string{}}
 	p.Say("sbd init: sets up .env for this checkout (%s). Nothing is written until you confirm.", c.Dir)
@@ -186,19 +192,14 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		p.Say("An .env exists: its values are the defaults, and only what you change is rewritten.")
 	}
 
-	// 1. Preflight
-	failed := false
+	// 1. Preflight: warnings only, writing .env doesn't depend on them
 	for _, ch := range Doctor(c) {
-		if ch.Level != "ok" && ch.What != ".env" && ch.What != "disk space" {
+		if ch.Level != "ok" && ch.What != ".env" && ch.What != "disk space" && ch.What != "NETWORK" && ch.What != "COMPOSE_PROFILES" && ch.What != "signer key" {
 			p.Say("  %s %s: %s", strings.ToUpper(ch.Level), ch.What, ch.Detail)
 		}
-		failed = failed || (ch.Level == "fail" && ch.What != "NETWORK" && ch.What != "COMPOSE_PROFILES" && ch.What != "signer key")
-	}
-	if failed {
-		return 1, fmt.Errorf("fix the failed checks above first (sbd doctor shows them all)")
 	}
 
-	// 2. Network
+	// 2. Network: the existing one, else mainnet (one network per host)
 	for {
 		n := strings.ToLower(st.answer(p, "NETWORK", "Network (mainnet, testnet)", orDefault(st.get("NETWORK"), "mainnet")))
 		if checkNetwork(n) == nil {
@@ -212,120 +213,117 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 	}
 	net := st.get("NETWORK")
 
-	// 3. Services
+	// 3. Services: the node and the API always; the rest optional
 	current := List(st.get("COMPOSE_PROFILES"))
-	profiles := []string{"node"}
+	profiles := []string{"node", "api"}
 	if v, ok := answers["COMPOSE_PROFILES"]; ok {
-		profiles = List(v)
-		if err := checkProfiles(profiles); err != nil {
+		if err := checkProfiles(List(v)); err != nil {
 			return 2, err
 		}
+		profiles = List(v)
 	} else {
-		for _, svc := range []struct{ name, question string }{
-			{"api", "Run the Stacks Blockchain API (and its postgres)?"},
-			{"signer", "Run a signer?"},
-			{"proxy", "Serve the API to other machines through the nginx proxy (ports 80/443)?"},
-			{"monitoring", "Run monitoring (Prometheus and Grafana, on this host only)?"},
-		} {
-			def := slices.Contains(current, svc.name) || (svc.name == "api" && c.Env == nil)
-			if svc.name == "proxy" && !slices.Contains(profiles, "api") {
-				continue
-			}
-			if p.Confirm(svc.question, def) {
-				profiles = append(profiles, svc.name)
-			}
+		if p.Confirm("Run a signer? (needs a registered signer key; see below)", slices.Contains(current, "signer")) {
+			profiles = append(profiles, "signer")
+		}
+		if p.Confirm("Serve the API to other machines through the nginx proxy (HTTP, port 80)?", slices.Contains(current, "proxy")) {
+			profiles = append(profiles, "proxy")
+		}
+		if p.Confirm("Run monitoring (Prometheus and Grafana, on this host only)?", slices.Contains(current, "monitoring")) {
+			profiles = append(profiles, "monitoring")
 		}
 	}
 	st.set("COMPOSE_PROFILES", strings.Join(profiles, ","))
 
-	// 4. Signer key and the node/signer auth token
+	// 4. Signer: only when asked for, with what it implies
 	if slices.Contains(profiles, "signer") {
 		keyVar := signerKeyVar(net)
 		key := st.get(keyVar)
 		if v, ok := answers[keyVar]; ok {
 			key = v
 		}
-		for !signerKeyRe.MatchString(key) {
+		if !signerKeyRe.MatchString(key) {
 			if _, ok := answers[keyVar]; ok || isDefaults(p) {
 				return 2, usagef("%s must be a 64-character hex private key (optionally ending in 01)", keyVar)
 			}
-			if key != "" {
-				p.Say("  not a 64-character hex key (optionally ending in 01)")
+			p.Say(`  A signer:
+    - changes the node's config (stacker = true, and an event observer for the signer);
+    - becomes a liveness dependency: the node waits on it, so a stopped signer stalls the node;
+    - signs only with a key registered on chain through stacking (stacked or delegated STX);
+    - keeps the key in .env and Signer.toml: back it up, and never use it on a second signer;
+    - can sign only once the node is at the tip, and should be monitored (it affects the network).`)
+			if !p.Confirm("Continue with the signer?", true) {
+				profiles = slices.DeleteFunc(profiles, func(s string) bool { return s == "signer" })
+				st.set("COMPOSE_PROFILES", strings.Join(profiles, ","))
+			} else {
+				for !signerKeyRe.MatchString(key) {
+					if key != "" {
+						p.Say("  not a 64-character hex key (optionally ending in 01)")
+					}
+					key = p.Secret("Signer private key (hex, not shown)")
+				}
 			}
-			key = p.Secret("Signer private key (hex, not shown)")
 		}
-		st.set(keyVar, key)
+		if slices.Contains(profiles, "signer") {
+			st.set(keyVar, key)
+		}
 	}
+	// The node/signer shared secret, also guarding the node's privileged RPC: never the sample's placeholder
 	if tok := st.get("AUTH_TOKEN"); tok == "" || tok == "1234" {
 		st.set("AUTH_TOKEN", randomHex(32))
-		p.Say("  AUTH_TOKEN: generated (the sample's 1234 is a placeholder)")
+		st.generated = append(st.generated, "AUTH_TOKEN")
 	}
 
-	// 5. Bitcoin peer
+	// 5. Bitcoin peer: a real P2P handshake (a TCP connect would accept anything listening)
 	btc := "BTC_"
 	if net == "testnet" {
 		btc = "TBTC_"
 	}
-	host := st.answer(p, btc+"HOST", "Bitcoin node to follow (host)", st.get(btc+"HOST"))
-	st.set(btc+"HOST", host)
-	port := st.answer(p, btc+"P2P_PORT", "Its P2P port", st.get(btc+"P2P_PORT"))
-	st.set(btc+"P2P_PORT", port)
-	if _, scripted := answers[btc+"HOST"]; !scripted && !isDefaults(p) {
-		if conn, err := (netDialer{}).dial(host, port); err != nil {
-			p.Say("  WARNING: can't reach %s:%s (%v); the node needs it", host, port, err)
-		} else {
-			conn.Close()
-			p.Say("  %s:%s is reachable", host, port)
+	for attempt := 1; ; attempt++ {
+		host := st.answer(p, btc+"HOST", "Bitcoin node to follow (host)", st.get(btc+"HOST"))
+		port := st.answer(p, btc+"P2P_PORT", "Its P2P port", st.get(btc+"P2P_PORT"))
+		st.set(btc+"HOST", host)
+		st.set(btc+"P2P_PORT", port)
+		_, scripted := answers[btc+"HOST"]
+		if scripted || isDefaults(p) {
+			break
+		}
+		peer, err := ProbeBtcPeer(net, host, port, 8*time.Second)
+		if err == nil {
+			p.Say("  %s:%s answers: %s at height %d", host, port, peer.UserAgent, peer.Height)
+			break
+		}
+		if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF") {
+			err = fmt.Errorf("it accepted the connection but closed it without answering the handshake: it may be full, not accepting new peers, or on another Bitcoin network")
+		}
+		p.Say("  WARNING: %s:%s: %v", host, port, err)
+		if attempt == 3 {
+			p.Say("  keeping %s:%s; check it before starting (sbd doctor, or the node's log)", host, port)
+			break
+		}
+		if p.Confirm("Use it anyway?", false) {
+			break
 		}
 	}
 
 	// 6. Data location
-	root := st.answer(p, "DATA_ROOT", "Where to keep the data", orDefault(st.get("DATA_ROOT"), "./persistent-data"))
+	root := st.answer(p, "DATA_ROOT", "Where to keep the data (chainstate, API database, signer)", orDefault(st.get("DATA_ROOT"), "./persistent-data"))
 	if root != orDefault(st.get("DATA_ROOT"), "./persistent-data") {
 		st.set("DATA_ROOT", root)
 	}
-	view := &Ctx{Dir: c.Dir, Env: c.Env, Sample: c.Sample, Docker: c.Docker, Remote: c.Remote}
-	view.Env = overlay(c, st.values)
+	view := &Ctx{Dir: c.Dir, Sample: c.Sample, Docker: c.Docker, Remote: c.Remote, Env: overlay(c, st.values)}
 	for _, ch := range diskChecks(view, profiles, c.Remote) {
 		p.Say("  %s: %s", ch.What, ch.Detail)
 	}
 
-	// 7. Proxy TLS, Grafana, the database password
-	if slices.Contains(profiles, "proxy") {
-		tlsDef := st.get("PROXY_TLS") == "1"
-		tls := tlsDef
-		if v, ok := answers["PROXY_TLS"]; ok {
-			tls = v == "1"
-		} else {
-			tls = p.Confirm("Serve HTTPS (needs fullchain.pem and privkey.pem)?", tlsDef)
-		}
-		if tls {
-			st.set("PROXY_TLS", "1")
-			dir := st.answer(p, "PROXY_TLS_DIR", "Directory with fullchain.pem and privkey.pem", orDefault(st.get("PROXY_TLS_DIR"), "./conf/nginx/tls"))
-			if dir != orDefault(st.get("PROXY_TLS_DIR"), "./conf/nginx/tls") {
-				st.set("PROXY_TLS_DIR", dir)
-			}
-			abs := dir
-			if !filepath.IsAbs(abs) {
-				abs = filepath.Join(c.Dir, dir)
-			}
-			for _, f := range []string{"fullchain.pem", "privkey.pem"} {
-				if _, err := os.Stat(filepath.Join(abs, f)); err != nil {
-					p.Say("  WARNING: %s is missing in %s: nginx won't start until it's there", f, dir)
-				}
-			}
-		} else if st.get("PROXY_TLS") == "1" {
-			st.set("PROXY_TLS", "0")
-		}
-	}
+	// 7. Generated passwords (listed at the end)
 	if slices.Contains(profiles, "monitoring") && st.get("GRAFANA_ADMIN_PASSWORD") == "" {
 		st.set("GRAFANA_ADMIN_PASSWORD", randomHex(12))
-		p.Say("  GRAFANA_ADMIN_PASSWORD: generated (sbd env get GRAFANA_ADMIN_PASSWORD shows it)")
+		st.generated = append(st.generated, "GRAFANA_ADMIN_PASSWORD")
 	}
 	// Only for a database that doesn't exist yet: postgres keeps the password it was created with
-	if slices.Contains(profiles, "api") && orDefault(st.get("PG_PASSWORD"), "postgres") == "postgres" && !hasData(dataDir(view, "api")) {
+	if orDefault(st.get("PG_PASSWORD"), "postgres") == "postgres" && !hasData(dataDir(view, "api")) {
 		st.set("PG_PASSWORD", randomHex(16))
-		p.Say("  PG_PASSWORD: generated for the new database")
+		st.generated = append(st.generated, "PG_PASSWORD")
 	}
 
 	// 8. Review and write
@@ -352,37 +350,90 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		p.Say(".env written (the previous one is in .env.save).")
 	}
 
-	// 9. Bootstrap and start
-	bootstrap := strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "Bootstrap: seed from the Hiro archive now, or sync from genesis (seed, genesis, later)", "later"))
-	next := []string{"sbd doctor"}
+	// 9. Bootstrap: keep an existing chainstate unless asked; seed by default when there is none
+	fresh, err := LoadEnv(filepath.Join(c.Dir, ".env"))
+	if err != nil {
+		return 1, err
+	}
+	run := &Ctx{Dir: c.Dir, Env: fresh, Sample: c.Sample, Docker: c.Docker, Yes: c.Yes, Out: c.Out, Remote: c.Remote}
+	var bootstrap string
+	if hasData(dataDir(run, "node")) {
+		bootstrap = strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "A "+net+" chainstate exists. Keep it, or delete it and seed from the Hiro archive / resync from genesis (keep, seed, resync)", "keep"))
+	} else {
+		bootstrap = strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "No "+net+" chainstate yet. Seed from the Hiro archive (hours) or sync from genesis (weeks on mainnet) (seed, genesis)", "seed"))
+	}
 	switch bootstrap {
-	case "seed":
-		next = append(next, "sbd seed")
-	case "genesis":
-		if net == "mainnet" {
-			p.Say("  A mainnet sync from genesis takes weeks; seeding takes hours.")
+	case "keep", "seed", "resync", "genesis":
+	default:
+		return 2, usagef("bootstrap %q: keep, seed, resync or genesis", bootstrap)
+	}
+	// A seed downloads hundreds of GB and a resync deletes data: each gets its own yes, never implied by
+	// the choice above
+	now := false
+	if bootstrap == "seed" || bootstrap == "resync" {
+		what := "Run the seed now? It downloads about 360 GB (mainnet) and takes a few hours"
+		if bootstrap == "resync" {
+			what = "Delete this network's data now (a resync from genesis follows on start)?"
+		}
+		now = !isDefaults(p) && p.Confirm(what, false)
+	}
+	if !start && !isDefaults(p) && (now || bootstrap == "keep" || bootstrap == "genesis") {
+		q := "Start the stack now?"
+		if now {
+			q = "Start the stack when that's done?"
+		}
+		start = p.Confirm(q, true)
+	}
+	if now {
+		cmd := map[string]string{"seed": "seed", "resync": "reset"}[bootstrap]
+		if code, err := runCommand(run, cmd, nil); err != nil || code != 0 {
+			return code, err
 		}
 	}
-	if start || (bootstrap != "later" && !isDefaults(p) && p.Confirm("Start the stack when that's done?", true)) {
-		next = append(next, "sbd start")
+	if start && (now || bootstrap == "keep" || bootstrap == "genesis") {
+		if code, err := runCommand(run, "start", nil); err != nil || code != 0 {
+			return code, err
+		}
+	} else {
+		start = false
 	}
-	if bootstrap == "seed" || slices.Contains(next, "sbd start") {
-		fresh, err := LoadEnv(filepath.Join(c.Dir, ".env"))
-		if err != nil {
-			return 1, err
-		}
-		run := &Ctx{Dir: c.Dir, Env: fresh, Sample: c.Sample, Docker: c.Docker, Yes: c.Yes, Out: c.Out, Remote: c.Remote}
-		if bootstrap == "seed" {
-			if code, err := runCommand(run, "seed", nil); err != nil || code != 0 {
-				return code, err
-			}
-		}
-		if slices.Contains(next, "sbd start") {
-			return runCommand(run, "start", nil)
-		}
-	}
-	p.Say("Next: %s", strings.Join(append(next, "sbd start"), ", then "))
+	initNotes(p, st, profiles, bootstrap, now, start)
 	return 0, nil
+}
+
+// initNotes ends init like a Helm chart's NOTES: what was generated and how to read it back (values are
+// never printed), where the services are, and what's next.
+func initNotes(p Prompter, st *initState, profiles []string, bootstrap string, done, started bool) {
+	p.Say("\nNotes:")
+	if len(st.generated) > 0 {
+		p.Say("  Generated and stored in .env (read them with sbd, or grep with plain Compose):")
+		for _, k := range st.generated {
+			p.Say("    sbd env get %-24s # grep '^%s=' .env", k, k)
+		}
+	}
+	p.Say("  API:        http://127.0.0.1:%s (this host only)", orDefault(st.get("STACKS_BLOCKCHAIN_API_PORT"), "3999"))
+	p.Say("  Node RPC:   http://127.0.0.1:%s/v2/info", orDefault(st.get("STACKS_CORE_RPC_PORT"), "20443"))
+	if slices.Contains(profiles, "proxy") {
+		p.Say("  Proxy:      http://<this host>:%s (the API, for other machines; terminate HTTPS in front of it)", orDefault(st.get("NGINX_PROXY_PORT"), "80"))
+	}
+	if slices.Contains(profiles, "monitoring") {
+		p.Say("  Grafana:    http://127.0.0.1:%s (user admin)", orDefault(st.get("GRAFANA_PORT"), "3000"))
+	}
+	if slices.Contains(profiles, "signer") {
+		p.Say("  Signer:     signs once the node is at the tip and its key is registered through stacking")
+	}
+	if !started {
+		next := []string{"sbd doctor"}
+		switch {
+		case bootstrap == "seed" && !done:
+			next = append(next, "sbd seed")
+		case bootstrap == "resync" && !done:
+			next = append(next, "sbd reset")
+		}
+		p.Say("  Next:       %s", strings.Join(append(next, "sbd start"), ", then "))
+	} else {
+		p.Say("  Next:       sbd status, sbd logs")
+	}
 }
 
 func isDefaults(p Prompter) bool { _, ok := p.(defaultsPrompter); return ok }
@@ -416,13 +467,6 @@ func runCommand(c *Ctx, name string, args []string) (int, error) {
 		}
 	}
 	return plan.Execute(c.Dir, c.Docker)
-}
-
-// netDialer is a seam for the connectivity test.
-type netDialer struct{}
-
-func (netDialer) dial(host, port string) (net.Conn, error) {
-	return net.DialTimeout("tcp", net.JoinHostPort(host, port), 3*time.Second)
 }
 
 func orDefault(v, def string) string {
