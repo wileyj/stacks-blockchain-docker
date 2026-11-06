@@ -99,11 +99,7 @@ func renderProxy(confRoot string, s Settings) error {
 	if err := writeAtomic(dest, RenderProxy(s), 0o644); err != nil {
 		return err
 	}
-	tls := "HTTP only"
-	if s.ProxyTLS {
-		tls = "HTTPS on 443, HTTP redirects"
-	}
-	fmt.Printf("config: wrote nginx/proxy.conf (%s)\n", tls)
+	fmt.Println("config: wrote nginx/proxy.conf")
 	return nil
 }
 

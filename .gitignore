@@ -50,4 +50,3 @@ conf/*/*.legacy*
 conf/monitoring/prometheus.yml
 conf/monitoring/grafana/provisioning/alerting/stacks.json
 conf/nginx/proxy.conf
-conf/nginx/tls/*.pem

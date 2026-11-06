@@ -6,10 +6,9 @@ import (
 )
 
 // The `proxy` profile is how the API is served to other machines (owner, 2026-11-05): the API and the
-// node RPC listen on 127.0.0.1 by default, and nginx publishes on PROXY_BIND_ADDR (default 0.0.0.0).
-// With PROXY_TLS=1 it serves HTTPS on 443 with fullchain.pem / privkey.pem from PROXY_TLS_DIR and
-// redirects HTTP to it; /status stays on plain HTTP for the healthcheck. The API proxies /v2/* to the
-// node itself, so the node's RPC is reachable through it too.
+// node RPC listen on 127.0.0.1 by default, and nginx publishes HTTP on PROXY_BIND_ADDR (default
+// 0.0.0.0). HTTPS is out of scope for now (owner, 2026-11-06): terminate it in front of the proxy. The
+// API proxies /v2/* to the node itself, so the node's RPC is reachable through it too.
 
 // RenderProxy renders conf/nginx/proxy.conf.
 func RenderProxy(s Settings) []byte {
@@ -33,21 +32,6 @@ upstream stacks-blockchain-api {
   }
 `
 	status := "  location /status {\n    default_type text/plain;\n    return 200 ok;\n  }\n"
-	b.WriteString("server {\n  listen 80;\n  server_name _;\n" + status)
-	if !s.ProxyTLS {
-		b.WriteString(api + "}\n")
-		return []byte(b.String())
-	}
-	b.WriteString("  location / {\n    return 301 https://$host$request_uri;\n  }\n}\n")
-	b.WriteString(`server {
-  listen 443 ssl;
-  http2 on;
-  server_name _;
-  ssl_certificate /etc/nginx/tls/fullchain.pem;
-  ssl_certificate_key /etc/nginx/tls/privkey.pem;
-  ssl_protocols TLSv1.2 TLSv1.3;
-  ssl_session_cache shared:tls:10m;
-  add_header Strict-Transport-Security "max-age=31536000" always;
-` + status + api + "}\n")
+	b.WriteString("server {\n  listen 80;\n  server_name _;\n" + status + api + "}\n")
 	return []byte(b.String())
 }

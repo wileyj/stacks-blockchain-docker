@@ -23,6 +23,7 @@ by side.
 ```bash
 git clone https://github.com/stx-labs/stacks-blockchain-docker && cd stacks-blockchain-docker
 cp sample.env .env      # NETWORK=mainnet and COMPOSE_PROFILES=node,api by default
+# or, with sbd: sbd init  (asks step by step, generates the secrets, writes .env)
 ```
 
 | | Plain Docker Compose | `sbd` |
@@ -33,7 +34,11 @@ cp sample.env .env      # NETWORK=mainnet and COMPOSE_PROFILES=node,api by defau
 | Logs | `docker compose logs -f` | `sbd logs` |
 | Stop (graceful, node first) | `docker compose --profile '*' down` | `sbd stop` |
 
-Services are chosen with `COMPOSE_PROFILES` in `.env`: `node`, `api` (the API and postgres), `signer`,
+For mainnet, follow your own Bitcoin node if you can (`BTC_HOST`, `BTC_P2P_PORT`): the default public
+peer is shared by many nodes and often busy ([requirements](./docs/requirements.md#bitcoin-node)).
+
+Services are chosen with `COMPOSE_PROFILES` in `.env`: `node` and `api` (the API and postgres) always run,
+plus any of `signer`,
 `proxy` (nginx) and `monitoring` (Prometheus and Grafana). A signer also needs its private key in
 `.env` (`SIGNER_PRIVATE_KEY`, or `TESTNET_SIGNER_PRIVATE_KEY` on testnet).
 
@@ -83,7 +88,7 @@ curl -sL localhost/v2/info | jq           # through the proxy (proxy profile)
 ```
 
 Everything listens on this host only, except the node's P2P port. To serve the API to other machines,
-add the `proxy` profile (nginx on port 80, optionally HTTPS); see
+add the `proxy` profile (nginx on port 80; terminate HTTPS in front of it); see
 [Exposing services](./docs/usage.md#exposing-services).
 
 ## Documentation

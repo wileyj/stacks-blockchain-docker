@@ -80,8 +80,11 @@ func checkNetwork(n string) error {
 }
 
 func checkProfiles(ps []string) error {
-	if len(ps) == 0 {
-		return usagef("no services selected: COMPOSE_PROFILES must list at least one of %s", strings.Join(Profiles, ", "))
+	// The node and the API always run; signer, proxy and monitoring are optional (owner, 2026-11-06)
+	for _, need := range []string{"node", "api"} {
+		if !slices.Contains(ps, need) {
+			return usagef("COMPOSE_PROFILES must include node and api (they always run); add any of signer, proxy, monitoring")
+		}
 	}
 	for _, p := range ps {
 		if !slices.Contains(Profiles, p) {

@@ -54,7 +54,7 @@ Plain `docker compose` is a **first-class, supported way to run the stack**, not
 | R3 | **Anything that must happen for correctness runs inside Compose**, not in the CLI: config rendering, ordering, health gating, graceful stop, the safety checks in jobs | The behavioral contract ([11 §A](./11-refactor-guidance.md)) holds with or without the CLI |
 | R4 | **Every CLI command is a documented compose command.** `sbd plan <cmd>` / `--dry-run` prints the exact argv. The compose-only reference (§11) and the CLI are generated from, or tested against, the same table | Users can graduate from the CLI to compose and back. The harness parity tests check both |
 | R5 | **Destructive jobs guard themselves.** `seed`, `reset`, `event-replay` and `db upgrade` refuse to run while the node/API is up, and require `--yes` (or `CONFIRM=yes`) when not on a TTY. The guard lives in the job container, not in the CLI | Running `docker compose run --rm seed` by hand is as safe as `sbd seed` |
-| R6 | **What the CLI may add** on top: preflight (Compose version, disk, ports, arch/storage advice), `.env` validation with friendly errors, the wizard, typed confirmations, progress bars, `--json`, `migrate`, the TUI | Skipping the CLI costs convenience, never correctness |
+| R6 | **What the CLI may add** on top: preflight (Compose version, disk, ports, arch/storage advice), `.env` validation with friendly errors, `sbd init`, typed confirmations, progress bars, `--json`, `migrate`, the TUI | Skipping the CLI costs convenience, never correctness |
 | R7 | **CI proves it:** a compose-only testnet smoke test runs with **no CLI binary present** (`docker compose up -d` → API healthy, node running → `docker compose --profile '*' down`) | Regressions that make the CLI mandatory fail the build |
 
 **How config rendering works without the CLI.** A one-shot `config` service with **no profile** (so it is always part of the project) renders `Config.toml` and `Signer.toml` from the templates, `.env` values and the user's override files, using a real TOML library. It is a small Go program from the same codebase as the CLI, published as an image. It reads the enabled profiles from `${COMPOSE_PROFILES}` to decide which `[[events_observer]]` blocks to emit, and fails with a clear message on invalid values. Services that need config declare `depends_on: { config: { condition: service_completed_successfully } }`. The CLI's `sbd config render` runs this same container, so there is exactly one renderer.
@@ -273,7 +273,7 @@ Target commands for running everything **without** the CLI, run from the repo ro
 
 | Task | Plain Docker Compose | `sbd` equivalent |
 |---|---|---|
-| First setup | `cp sample.env .env`, then edit `NETWORK`, `COMPOSE_PROFILES`, credentials | `sbd init` (wizard) |
+| First setup | `cp sample.env .env`, then edit `NETWORK`, `COMPOSE_PROFILES`, credentials | `sbd init` |
 | Choose services | edit `COMPOSE_PROFILES` in `.env`, e.g. `node,api,signer,monitoring` | `sbd start --with signer,monitoring` (writes `.env`) |
 | Start | `docker compose up -d` | `sbd start` |
 | Stop (graceful, node first) | `docker compose --profile '*' down` (uses `stop_grace_period`; **don't pass `-t`**, which overrides the 1200s node timeout). `--profile '*'` also stops services that were removed from `COMPOSE_PROFILES` | `sbd stop` |
@@ -291,4 +291,4 @@ Target commands for running everything **without** the CLI, run from the repo ro
 | Different network | change `NETWORK` in `.env` (single instance per host, as today), or keep one `.env` per network: `docker compose --env-file testnet.env up -d` | `sbd start --network testnet` |
 | Remote Docker host (Tier 2 Unix) | `DOCKER_HOST=ssh://user@host docker compose up -d` | `sbd --host ssh://user@host start` |
 
-What a compose-only user gives up (R6): preflight checks, the wizard, friendly `.env` validation before anything starts (the `config` job still rejects invalid values, but only at `up`), typed confirmations, progress bars, `--json`, `migrate`, and the TUI.
+What a compose-only user gives up (R6): preflight checks, `sbd init`, friendly `.env` validation before anything starts (the `config` job still rejects invalid values, but only at `up`), typed confirmations, progress bars, `--json`, `migrate`, and the TUI.

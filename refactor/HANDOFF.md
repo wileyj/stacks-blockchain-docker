@@ -244,6 +244,15 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 **Next increments:** release builds (phase 4).
 
+## Phase 6: `sbd init`, done (2026-11-05, revised 2026-11-06)
+
+Owner, 2026-11-05: "init", not "wizard"; still needed. Walked through step by step with the owner on 2026-11-06; the steps and their reasons are in 13 §1. Highlights: preflight warns only; Enter keeps the existing network, else mainnet; node and API always run, signer off by default and explained before its key is asked; a real Bitcoin P2P handshake; no TLS in the proxy (port 80 only); generated secrets listed at the end like Helm notes; an existing chainstate is kept unless the user asks to seed or resync. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env` (then optionally runs seed/reset/start). Dependency: `golang.org/x/term`. `sbd ui` not started.
+
+**Follow-ups from the walk-through:**
+- **HTTPS on 443 as the default** (owner): TLS was removed from the proxy for now; revisit the options (ACME, a CDN, ...).
+- **Enforce node + API in the config job** too (Q19 revised): it fails CI's `compose-only boot (mainnet node)`, a required check, so the CI matrix and the branch ruleset change together.
+- **The default mainnet Bitcoin peer `bitcoin.mainnet.stacks.org:8333` is overloaded** (2026-11-06): it accepts TCP and turns most handshakes away (`est.stacksnodes.org` is the same machine). A real stacks-node still synced from it after 3 "Connection broken" retries (16/32/60 s), about 2.5 min. Owner: many nodes use it (thundering herd); its capacity won't change (cost); `cet`/`sgt.stacksnodes.org` answer but aren't public and may go away, so no alternates are configured. **Decided:** recommend running your own Bitcoin node (sample.env, requirements, README, config); `sbd init` doesn't probe the default peer and handshakes only a peer the user enters.
+
 ## Phase 5: soak (started 2026-11-03, in progress)
 
 Owner, 2026-11-03: a 7-day Run A, then review; a genesis-sync Run B only until past the heavy blocks (Q26), not for days. Details in 15 "Phase 5".
