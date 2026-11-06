@@ -66,7 +66,45 @@ func TestProbeBtcPeer(t *testing.T) {
 		}
 	}()
 	host, port, _ = net.SplitHostPort(ln.Addr().String())
-	if _, err := ProbeBtcPeer("mainnet", host, port, 3*time.Second); err == nil || !strings.Contains(err.Error(), "not a Bitcoin P2P port") {
+	if _, err := ProbeBtcPeer("mainnet", host, port, 3*time.Second); err == nil || !strings.Contains(err.Error(), "not a Bitcoin P2P port") || classify(err) != peerWrong {
 		t.Errorf("a non-Bitcoin port must be recognised: %v", err)
+	}
+}
+
+// A busy peer accepts the connection and closes it: busy, not broken. Nothing listening: down.
+func TestClassify(t *testing.T) {
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	_, err := ProbeBtcPeer("mainnet", host, port, 3*time.Second)
+	if classify(err) != peerBusy {
+		t.Errorf("closed during the handshake: %v -> %s", err, classify(err))
+	}
+	ln.Close()
+	_, err = ProbeBtcPeer("mainnet", host, port, 3*time.Second)
+	if classify(err) != peerDown {
+		t.Errorf("nothing listening: %v -> %s", err, classify(err))
+	}
+	// Connected, but no answer (an RPC port waits for an HTTP request)
+	silent, _ := net.Listen("tcp", "127.0.0.1:0")
+	defer silent.Close()
+	go func() {
+		if c, err := silent.Accept(); err == nil {
+			time.Sleep(3 * time.Second)
+			c.Close()
+		}
+	}()
+	host, port, _ = net.SplitHostPort(silent.Addr().String())
+	_, err = ProbeBtcPeer("mainnet", host, port, time.Second)
+	if classify(err) != peerWrong {
+		t.Errorf("no answer: %v -> %s", err, classify(err))
 	}
 }

@@ -34,6 +34,9 @@ cp sample.env .env      # NETWORK=mainnet and COMPOSE_PROFILES=node,api by defau
 | Logs | `docker compose logs -f` | `sbd logs` |
 | Stop (graceful, node first) | `docker compose --profile '*' down` | `sbd stop` |
 
+For mainnet, follow your own Bitcoin node if you can (`BTC_HOST`, `BTC_P2P_PORT`): the default public
+peer is shared by many nodes and often busy ([requirements](./docs/requirements.md#bitcoin-node)).
+
 Services are chosen with `COMPOSE_PROFILES` in `.env`: `node` and `api` (the API and postgres) always run,
 plus any of `signer`,
 `proxy` (nginx) and `monitoring` (Prometheus and Grafana). A signer also needs its private key in

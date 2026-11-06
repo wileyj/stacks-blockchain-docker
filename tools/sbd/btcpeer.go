@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -27,6 +28,35 @@ var btcMagic = map[string][4]byte{
 var otherMagic = map[[4]byte]string{
 	{0xf9, 0xbe, 0xb4, 0xd9}: "Bitcoin mainnet", {0xfa, 0xbf, 0xb5, 0xda}: "regtest",
 	{0x0b, 0x11, 0x09, 0x07}: "testnet3", {0x1c, 0x16, 0x3f, 0x28}: "testnet4", {0x0a, 0x03, 0xcf, 0x40}: "signet",
+}
+
+// Probe outcomes, from what the peer did.
+const (
+	peerOK    = "ok"
+	peerBusy  = "busy"  // accepted the connection, then closed it during the handshake
+	peerWrong = "wrong" // answered, but not as a Bitcoin node of this network, or not at all
+	peerDown  = "down"  // no connection (DNS, refused, timeout)
+)
+
+// classify turns a probe error into an outcome.
+func classify(err error) string {
+	switch {
+	case err == nil:
+		return peerOK
+	// Closed (cleanly, or reset before reading our message) once connected: turned away, i.e. busy
+	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE):
+		return peerBusy
+	}
+	var ne net.Error
+	var oe *net.OpError
+	if errors.As(err, &oe) && oe.Op == "dial" {
+		return peerDown
+	}
+	if errors.As(err, &ne) && ne.Timeout() {
+		return peerWrong // connected, but no Bitcoin answer: typically the RPC port
+	}
+	return peerWrong
 }
 
 // BtcPeer is what the peer says about itself.
@@ -91,7 +121,7 @@ func ProbeBtcPeer(network, host, port string, timeout time.Duration) (BtcPeer, e
 	for i := 0; i < 5; i++ {
 		hdr := make([]byte, 24)
 		if _, err := io.ReadFull(conn, hdr); err != nil {
-			return BtcPeer{}, fmt.Errorf("no Bitcoin handshake answer: %w", err)
+			return BtcPeer{}, err
 		}
 		var got [4]byte
 		copy(got[:], hdr[:4])

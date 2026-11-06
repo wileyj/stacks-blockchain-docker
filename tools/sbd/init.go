@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -273,29 +272,49 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		st.generated = append(st.generated, "AUTH_TOKEN")
 	}
 
-	// 5. Bitcoin peer: a real P2P handshake (a TCP connect would accept anything listening)
+	// 5. Bitcoin peer. Owner, 2026-11-06: users should run their own Bitcoin node if at all possible.
+	// The sample's default peer serves many nodes and often turns handshakes away while the node's own
+	// retries get through, so it isn't checked; any other peer gets a real P2P handshake (a TCP connect
+	// would accept anything listening, e.g. the RPC port or a node on another network)
 	btc := "BTC_"
 	if net == "testnet" {
 		btc = "TBTC_"
 	}
+	_, scripted := answers[btc+"HOST"]
+	sampleHost := ""
+	if c.Sample != nil {
+		sampleHost, _ = c.Sample.Get(btc + "HOST")
+	}
+	if !scripted && !isDefaults(p) && st.get(btc+"HOST") == sampleHost && net == "mainnet" {
+		p.Say("  Follow your own Bitcoin node if at all possible: the default public peer serves many nodes and is often busy.")
+	}
 	for attempt := 1; ; attempt++ {
-		host := st.answer(p, btc+"HOST", "Bitcoin node to follow (host)", st.get(btc+"HOST"))
+		host := st.answer(p, btc+"HOST", "Bitcoin node to follow (host; your own if you have one)", st.get(btc+"HOST"))
 		port := st.answer(p, btc+"P2P_PORT", "Its P2P port", st.get(btc+"P2P_PORT"))
 		st.set(btc+"HOST", host)
 		st.set(btc+"P2P_PORT", port)
-		_, scripted := answers[btc+"HOST"]
-		if scripted || isDefaults(p) {
+		if scripted || isDefaults(p) || (host == sampleHost && sampleHost != "") {
 			break
 		}
 		peer, err := ProbeBtcPeer(net, host, port, 8*time.Second)
-		if err == nil {
+		outcome := classify(err)
+		switch outcome {
+		case peerOK:
 			p.Say("  %s:%s answers: %s at height %d", host, port, peer.UserAgent, peer.Height)
+		case peerBusy:
+			p.Say("  %s:%s accepted the connection but turned the handshake away: it is busy. The node retries and normally gets through; your own Bitcoin node avoids the wait.", host, port)
+		case peerWrong:
+			hint := ""
+			if port == "8332" || port == "18332" || port == "18443" {
+				hint = " (that looks like an RPC port; the P2P port is usually 8333, or 18444 on regtest)"
+			}
+			p.Say("  WARNING: %s:%s isn't a Bitcoin P2P port for %s: %v%s", host, port, net, err, hint)
+		default:
+			p.Say("  WARNING: can't reach %s:%s: %v", host, port, err)
+		}
+		if outcome == peerOK || outcome == peerBusy {
 			break
 		}
-		if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF") {
-			err = fmt.Errorf("it accepted the connection but closed it without answering the handshake: it may be full, not accepting new peers, or on another Bitcoin network")
-		}
-		p.Say("  WARNING: %s:%s: %v", host, port, err)
 		if attempt == 3 {
 			p.Say("  keeping %s:%s; check it before starting (sbd doctor, or the node's log)", host, port)
 			break

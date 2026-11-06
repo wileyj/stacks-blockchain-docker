@@ -105,7 +105,7 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 
 | Name           | Description                           | Default Value                |
 | -------------- | ------------------------------------- | ---------------------------- |
-| `BTC_HOST`     | FQDN of bitcoin mainnnet host         | `bitcoin.mainnet.stacks.org` |
+| `BTC_HOST`     | Bitcoin node the Stacks node follows over P2P. Use your own if at all possible: the default public peer is shared and often busy | `bitcoin.mainnet.stacks.org` |
 | `BTC_RPC_USER` | Optional RPC username for bitcoin mainnet host. A follower doesn't need one | _(unset)_ |
 | `BTC_RPC_PASS` | Optional RPC password for bitcoin mainnet host. A follower doesn't need one | _(unset)_ |
 | `BTC_RPC_PORT` | RPC port for bitcoin mainnet host     | `8332`                       |

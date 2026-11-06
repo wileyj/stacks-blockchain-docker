@@ -28,6 +28,14 @@ starts (`docker compose run --rm seed --dry-run`).
 Put the data on a dedicated disk with `DATA_ROOT`, or per component with `STACKS_DATA_DIR`,
 `POSTGRES_DATA_DIR` and `SIGNER_DATA_DIR` in `.env`. They may be mount points.
 
+## Bitcoin node
+
+A Stacks node follows Bitcoin over its P2P port (8333 on mainnet). **Run your own Bitcoin node if at all
+possible** and point `BTC_HOST` / `BTC_P2P_PORT` at it: a pruned `bitcoind` is enough, and a node on the
+same host or LAN syncs Bitcoin headers in about a minute. The default, `bitcoin.mainnet.stacks.org`, is
+a single public peer shared by many Stacks nodes; it often turns connections away, and the node then
+retries (16, 32, 60 s ...), so a first sync from it can take much longer. No RPC credentials are needed.
+
 ## Docker Desktop (macOS, Windows)
 
 Chain data on a bind mount goes through Docker Desktop's file sharing, which is much slower than a

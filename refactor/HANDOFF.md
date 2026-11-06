@@ -251,7 +251,7 @@ Owner, 2026-11-05: "init", not "wizard"; still needed. Walked through step by st
 **Follow-ups from the walk-through:**
 - **HTTPS on 443 as the default** (owner): TLS was removed from the proxy for now; revisit the options (ACME, a CDN, ...).
 - **Enforce node + API in the config job** too (Q19 revised): it fails CI's `compose-only boot (mainnet node)`, a required check, so the CI matrix and the branch ruleset change together.
-- **The default mainnet Bitcoin peer `bitcoin.mainnet.stacks.org:8333` refuses P2P handshakes**: it accepts TCP and closes the connection at once, for every variant tried (2026-11-06). New installs following the default depend on it (P1 saw slow, dropped header syncs). Review the default with whoever runs it.
+- **The default mainnet Bitcoin peer `bitcoin.mainnet.stacks.org:8333` is overloaded** (2026-11-06): it accepts TCP and turns most handshakes away (`est.stacksnodes.org` is the same machine). A real stacks-node still synced from it after 3 "Connection broken" retries (16/32/60 s), about 2.5 min. Owner: many nodes use it (thundering herd); its capacity won't change (cost); `cet`/`sgt.stacksnodes.org` answer but aren't public and may go away, so no alternates are configured. **Decided:** recommend running your own Bitcoin node (sample.env, requirements, README, config); `sbd init` doesn't probe the default peer and handshakes only a peer the user enters.
 
 ## Phase 5: soak (started 2026-11-03, in progress)
 

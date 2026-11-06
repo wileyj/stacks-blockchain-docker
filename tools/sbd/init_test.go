@@ -45,7 +45,8 @@ func (s *scripted) Confirm(q string, def bool) bool {
 }
 func (s *scripted) Say(f string, a ...any) { fmt.Fprintf(&s.out, f+"\n", a...) }
 
-const initSample = sampleEnv + "AUTH_TOKEN=1234\nBTC_HOST=127.0.0.1\nBTC_P2P_PORT=1\nTBTC_HOST=127.0.0.1\nTBTC_P2P_PORT=1\nPG_PASSWORD=postgres\n"
+// The default peers are never probed; the tests' own peers listen on 127.0.0.1
+const initSample = sampleEnv + "AUTH_TOKEN=1234\nBTC_HOST=btc.default.invalid\nBTC_P2P_PORT=8333\nTBTC_HOST=tbtc.default.invalid\nTBTC_P2P_PORT=18444\nPG_PASSWORD=postgres\n"
 
 func initProject(t *testing.T, env string) (string, *Ctx) {
 	t.Helper()
@@ -183,6 +184,23 @@ func TestInitSeedNeedsItsOwnYes(t *testing.T) {
 	}
 }
 
+// The default peer serves many nodes and often turns handshakes away: it isn't probed (owner, 2026-11-06)
+func TestInitDoesntProbeTheDefaultPeer(t *testing.T) {
+	dir, c := initProject(t, initSample)
+	// network, signer, proxy, monitoring, host (default), port (default), data, write, bootstrap, start
+	p := &scripted{answers: []string{"", "n", "n", "n", "", "", "", "y", "genesis", "n"}}
+	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
+		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
+	}
+	out := p.out.String()
+	if strings.Contains(out, "WARNING") || strings.Contains(out, "answers:") || !strings.Contains(out, "Follow your own Bitcoin node") {
+		t.Errorf("no probe of btc.default.invalid, and the own-node advice:\n%s", out)
+	}
+	if readEnv(t, dir)["BTC_HOST"] != "btc.default.invalid" {
+		t.Errorf("the default peer is kept")
+	}
+}
+
 func TestInitBadBitcoinPeer(t *testing.T) {
 	_, c := initProject(t, initSample)
 	// a closed port three times: init warns each time and keeps the last answer
@@ -190,7 +208,7 @@ func TestInitBadBitcoinPeer(t *testing.T) {
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
-	if n := strings.Count(p.out.String(), "WARNING: 127.0.0.1:1"); n != 3 || !strings.Contains(p.out.String(), "keeping 127.0.0.1:1") {
+	if n := strings.Count(p.out.String(), "WARNING: can't reach 127.0.0.1:1"); n != 3 || !strings.Contains(p.out.String(), "keeping 127.0.0.1:1") {
 		t.Errorf("three warnings, then kept:\n%s", p.out.String())
 	}
 }
