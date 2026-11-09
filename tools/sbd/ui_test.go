@@ -121,6 +121,7 @@ func TestSyncStatus(t *testing.T) {
 
 func TestFetchChain(t *testing.T) {
 	now := time.Now().Unix()
+	stackerSetCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/info":
@@ -131,23 +132,39 @@ func TestFetchChain(t *testing.T) {
 			fmt.Fprintf(w, `{"results":[{"height":9449930,"block_time":%d}]}`, now-12)
 		case "/extended/v2/burn-blocks":
 			fmt.Fprintf(w, `{"results":[{"burn_block_time":%d}]}`, now-600)
+		case "/v2/pox":
+			fmt.Fprint(w, `{"min_amount_ustx":50000000000,"current_cycle":{"id":147,"stacked_ustx":513912288333589},"next_cycle":{"id":148,"stacked_ustx":453050307071976,"blocks_until_prepare_phase":1534,"blocks_until_reward_phase":1634}}`)
+		case "/v3/stacker_set/147":
+			stackerSetCalls++
+			fmt.Fprint(w, `{"stacker_set":{"signers":[{"weight":1},{"weight":2},{"weight":3}]}}`)
+		case "/extended/v2/blocks/9449930/signer-signatures":
+			fmt.Fprint(w, `{"limit":1,"offset":0,"total":27,"results":["0x00"]}`)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
-	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "")
+	signers := map[int64]int{}
+	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers)
 	if ci.NodeErr != "" || ci.APIErr != "" || ci.Tip != 9449931 || ci.Burn != 975206 || ci.PeersOut != 3 ||
 		ci.APITip != 9449930 || ci.BlockTime.Unix() != now-12 || ci.BurnTime.Unix() != now-600 || ci.RefSet {
 		t.Fatalf("got %+v", ci)
 	}
+	if ci.Pox == nil || ci.Pox.Current.ID != 147 || ci.Pox.Next.UntilReward != 1634 || ci.Signers != 3 || ci.Signatures != 27 {
+		t.Fatalf("pox/signers: %+v %+v", ci.Pox, ci)
+	}
+	// The signer set is fetched once per cycle
+	fetchChain(srv.Client(), srv.URL, srv.URL, "", signers)
+	if stackerSetCalls != 1 {
+		t.Errorf("stacker set fetched %d times", stackerSetCalls)
+	}
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
-	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "")
-	if ci.NodeErr != "connection refused" || ci.APIErr != "404 Not Found" {
+	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "", signers)
+	if ci.NodeErr != "connection refused" || ci.APIErr != "404 Not Found" || ci.Pox != nil || ci.Signatures != -1 {
 		t.Errorf("errors: node %q, api %q", ci.NodeErr, ci.APIErr)
 	}
-	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/")
+	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/", signers)
 	if ci.NodeErr != "not reachable" || !ci.RefSet || ci.RefTip != 9449931 {
 		t.Fatalf("without the node, with a reference: %+v", ci)
 	}
@@ -241,7 +258,11 @@ func uiFixture(t *testing.T) *uiModel {
 		{psRow: psRow{Service: "stacks-signer", Name: "sbd-x-stacks-signer", State: "exited", ExitCode: 1}},
 	}
 	m.use["sbd-x-stacks-blockchain"] = &resUse{CPU: 61, Mem: 3 << 30, HasIO: true, ReadRate: 42e6, WriteRate: 118e6}
-	m.chain = chainInfo{Tip: 9449931, Burn: 975206, PeersOut: 6, APITip: 9449931, BlockTime: now.Add(-12 * time.Second), BurnTime: now.Add(-28 * time.Minute)}
+	pox := &poxInfo{MinUSTX: 50_000_000_000}
+	pox.Current.ID, pox.Current.Stacked = 147, 513_912_288_333_589
+	pox.Next.ID, pox.Next.Stacked, pox.Next.UntilPrepare, pox.Next.UntilReward = 148, 453_050_307_071_976, 1534, 1634
+	m.chain = chainInfo{Tip: 9449931, Burn: 975206, PeersOut: 6, APITip: 9449931, BlockTime: now.Add(-12 * time.Second), BurnTime: now.Add(-28 * time.Minute),
+		Pox: pox, Signers: 35, Signatures: 27}
 	m.chainAt = now
 	m.host = hostInfo{Disks: []diskFree{{"data", 1300 << 30}}, Load: "1.80 1.50 1.20", MemTotal: 64 << 30, MemAvail: 30 << 30}
 	for i := range 20 {
@@ -285,10 +306,15 @@ func TestRenderFits(t *testing.T) {
 	m.w, m.h = 80, 24
 	out := m.render()
 	for _, want := range []string{"sbd ui · mainnet · node,api,monitoring", "stacks-blockchain ", "healthy", "3.0 GiB", "42.0M/118.0M",
-		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "data 1.3 TiB", "WARN [99] something", "q quit"} {
+		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "data 1.3 TiB", "q quit",
+		"── PROBLEMS", "stacks-signer exited with code 1", "cycle   147, reward phase · 148 starts in 1,634 blocks (~11d8h)",
+		"stacked 513.9M STX · 148 so far 453.1M STX · minimum 50,000 STX", "signed  27 signatures on block 9,449,931 (35 signers in cycle 147)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("80x24 view lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "WARN [99]") {
+		t.Error("logs on the dashboard")
 	}
 	// A finished job is not a service, a failed one shows; the node comes first
 	if strings.Contains(out, "seed") || !strings.Contains(out, "stacks-signer") {
@@ -320,18 +346,28 @@ func TestKeys(t *testing.T) {
 	if cmd := press("s"); cmd == nil || m.confirm != "" {
 		t.Fatal("s didn't run")
 	}
+	press("l")
+	if !m.logView || !strings.Contains(m.render(), "LOGS stacks-blockchain ") {
+		t.Fatal("l didn't open the log view")
+	}
+	m.lines = append(m.lines, "INFO [39] line 39", "WARN [99] something")
+	m.warns = []string{"WARN [99] something"}
 	press("w")
 	out := m.render()
 	if strings.Contains(out, "INFO [39]") || !strings.Contains(out, "WARN [99]") || !strings.Contains(out, "LOGS stacks-blockchain, WARN+") {
 		t.Errorf("warn filter:\n%s", out)
 	}
 	m.warns = nil
-	if !strings.Contains(m.render(), "no warnings or errors in the last 41 lines") {
+	if !strings.Contains(m.render(), "no warnings or errors in the last 2 lines") {
 		t.Error("empty WARN+ view has no note")
 	}
 	press("l")
 	if m.logSvc != "stacks-blockchain-api" || len(m.lines) != 0 {
 		t.Errorf("l: %q %d", m.logSvc, len(m.lines))
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.logView || strings.Contains(m.render(), "LOGS") {
+		t.Error("esc didn't close the log view")
 	}
 	press("?")
 	if !strings.Contains(m.render(), "sbd reset") {
@@ -352,5 +388,44 @@ func TestActionsAreCLICommands(t *testing.T) {
 		if cmd := lookup(args[0]); cmd == nil || cmd.Plan == nil {
 			t.Errorf("%s: sbd %v is not a planned command", key, args)
 		}
+	}
+}
+
+func TestProblems(t *testing.T) {
+	m := uiFixture(t)
+	texts := func() string {
+		var s []string
+		for _, p := range m.problems() {
+			s = append(s, p.text)
+		}
+		return strings.Join(s, " | ")
+	}
+	// The fixture's only problem is the failed signer
+	if got := texts(); got != "stacks-signer exited with code 1" {
+		t.Errorf("fixture: %q", got)
+	}
+	m.svcs = m.svcs[:5]
+	if got := texts(); got != "none" {
+		t.Errorf("healthy: %q", got)
+	}
+	// State only: a stalled API, an old block, a stale burn chain, no peers, a recent restart
+	m.chain.APITip -= 120
+	m.chain.BlockTime = m.now.Add(-20 * time.Minute)
+	m.chain.BurnTime = m.now.Add(-3 * time.Hour)
+	m.chain.PeersOut = 0
+	m.svcs[2].Started = m.now.Add(-2 * time.Minute)
+	got := texts()
+	for _, want := range []string{"the node has no peers", "stacks-blockchain restarted 2m00s ago (1 restarts)", "behind: latest block 20m00s old",
+		"the API is 120 blocks behind the node", "no new Bitcoin block for 3h00m"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lacks %q: %s", want, got)
+		}
+	}
+	if !strings.HasPrefix(got, "the node has no peers") {
+		t.Errorf("errors don't come first: %s", got)
+	}
+	m.chain.NodeErr = "connection refused"
+	if got := texts(); !strings.Contains(got, "the node doesn't answer on its RPC port: connection refused") {
+		t.Errorf("node down: %s", got)
 	}
 }

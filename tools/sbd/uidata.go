@@ -266,6 +266,24 @@ type chainInfo struct {
 	RefSet            bool
 	RefTip            int64
 	RefErr            string
+	Pox               *poxInfo // nil when the node didn't answer /v2/pox
+	Signers           int      // signers in the current cycle's set; 0 = unknown
+	Signatures        int      // signatures on the API's latest block; -1 = unknown
+}
+
+// poxInfo is the part of the node's /v2/pox the dashboard shows.
+type poxInfo struct {
+	MinUSTX uint64 `json:"min_amount_ustx"`
+	Current struct {
+		ID      int64  `json:"id"`
+		Stacked uint64 `json:"stacked_ustx"`
+	} `json:"current_cycle"`
+	Next struct {
+		ID           int64  `json:"id"`
+		Stacked      uint64 `json:"stacked_ustx"`
+		UntilPrepare int64  `json:"blocks_until_prepare_phase"`
+		UntilReward  int64  `json:"blocks_until_reward_phase"`
+	} `json:"next_cycle"`
 }
 
 // getJSON fetches url into v. Its errors are short enough for the chain panel: "connection refused",
@@ -288,9 +306,10 @@ func getJSON(client *http.Client, url string, v any) error {
 }
 
 // fetchChain polls the node, the API and the reference in parallel. An empty URL means the service
-// isn't reachable from here (not running, or its port not published).
-func fetchChain(client *http.Client, node, api, ref string) chainInfo {
-	var ci chainInfo
+// isn't reachable from here (not running, or its port not published). signers caches the size of
+// each cycle's signer set; only the node's goroutine uses it.
+func fetchChain(client *http.Client, node, api, ref string, signers map[int64]int) chainInfo {
+	ci := chainInfo{Signatures: -1}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
@@ -316,6 +335,26 @@ func fetchChain(client *http.Client, node, api, ref string) chainInfo {
 				ci.NodeErr = err.Error()
 			}
 		})
+		if err != nil {
+			return
+		}
+		// PoX and the signer set are extras: a node that doesn't serve them still shows the rest
+		var pox poxInfo
+		if getJSON(client, node+"/v2/pox", &pox) != nil {
+			return
+		}
+		cycle := pox.Current.ID
+		if _, ok := signers[cycle]; !ok {
+			var set struct {
+				StackerSet struct {
+					Signers []json.RawMessage `json:"signers"`
+				} `json:"stacker_set"`
+			}
+			if getJSON(client, fmt.Sprintf("%s/v3/stacker_set/%d", node, cycle), &set) == nil {
+				signers[cycle] = len(set.StackerSet.Signers)
+			}
+		}
+		set(func() { ci.Pox, ci.Signers = &pox, signers[cycle] })
 	})
 	wg.Go(func() {
 		if api == "" {
@@ -348,6 +387,15 @@ func fetchChain(client *http.Client, node, api, ref string) chainInfo {
 				ci.BurnTime = time.Unix(burns.Results[0].Time, 0)
 			}
 		})
+		if err != nil || len(blocks.Results) == 0 {
+			return
+		}
+		var sigs struct {
+			Total int `json:"total"`
+		}
+		if getJSON(client, fmt.Sprintf("%s/extended/v2/blocks/%d/signer-signatures?limit=1", api, blocks.Results[0].Height), &sigs) == nil {
+			set(func() { ci.Signatures = sigs.Total })
+		}
 	})
 	if ref != "" {
 		ci.RefSet = true
@@ -549,6 +597,15 @@ func bytesIEC(n uint64) string {
 		i++
 	}
 	return fmt.Sprintf("%.1f %ciB", v, "KMGTP"[i])
+}
+
+// stx prints micro-STX as STX: 513.9M STX, 50,000 STX.
+func stx(ustx uint64) string {
+	v := ustx / 1_000_000
+	if v >= 1_000_000 {
+		return fmt.Sprintf("%.1fM STX", float64(v)/1e6)
+	}
+	return commas(int64(v)) + " STX"
 }
 
 // rate prints bytes per second compactly (2.4M, 812k, 0).

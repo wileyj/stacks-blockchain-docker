@@ -147,6 +147,7 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 	client := &http.Client{Timeout: 3 * time.Second}
 	rpcPort := portSetting(c, "STACKS_CORE_RPC_PORT", 20443)
 	apiPort := portSetting(c, "STACKS_BLOCKCHAIN_API_PORT", 3999)
+	signers := map[int64]int{}
 	t := time.NewTicker(pollTime)
 	defer t.Stop()
 	for full := true; ; {
@@ -154,7 +155,7 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 		p.Send(svcMsg{svcs, err})
 		if full {
 			ci := fetchChain(client, endpoint(svcs, "stacks-blockchain", rpcPort),
-				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey))
+				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers)
 			p.Send(chainMsg{ci, time.Now()})
 			p.Send(hostMsg(collectHost(c)))
 		}
@@ -290,6 +291,7 @@ type uiModel struct {
 	lines    []string
 	warns    []string // warning and error lines, kept apart so the chatty INFO lines don't push them out
 	warnOnly bool
+	logView  bool   // the full-screen log view; logs are followed only while it is open
 	confirm  string // the action awaiting y/N
 	help     bool
 	status   string // result of the last action
@@ -315,7 +317,14 @@ func (m *uiModel) followLogs() tea.Cmd {
 	}
 }
 
-func (m *uiModel) Init() tea.Cmd { return tea.Batch(tick(), m.followLogs()) }
+func (m *uiModel) closeLogs() {
+	m.logView, m.lines, m.warns = false, nil, nil
+	if m.logs != nil {
+		m.logs.stop()
+	}
+}
+
+func (m *uiModel) Init() tea.Cmd { return tick() }
 
 // shownServices are the containers to list: running ones, and ones that failed. A job that finished
 // (seed, config-check) is not a service.
@@ -418,7 +427,9 @@ func (m *uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = "sbd " + msg.name + ": " + msg.err.Error()
 		}
-		return m, m.followLogs()
+		if m.logView {
+			return m, m.followLogs()
+		}
 	case tea.KeyPressMsg:
 		return m.key(msg.String())
 	}
@@ -452,7 +463,15 @@ func (m *uiModel) key(k string) (tea.Model, tea.Cmd) {
 		return m, m.run(k)
 	case "w":
 		m.warnOnly = !m.warnOnly
+	case "esc":
+		if m.logView {
+			m.closeLogs()
+		}
 	case "l":
+		if !m.logView {
+			m.logView = true
+			return m, m.followLogs()
+		}
 		var names []string
 		for _, s := range m.shownServices() {
 			if !slices.Contains(names, s.Service) {
@@ -529,6 +548,9 @@ func (m *uiModel) render() string {
 	if m.help {
 		return clip(m.helpLines(), w, h)
 	}
+	if m.logView {
+		return m.renderLogs(w, h)
+	}
 	var top []string
 	title := stHead.Render(fmt.Sprintf("sbd ui · %s · %s", m.c.Value("NETWORK"), m.c.Value("COMPOSE_PROFILES")))
 	clock := m.now.Format("15:04:05")
@@ -558,12 +580,21 @@ func (m *uiModel) render() string {
 			top = append(top, " "+l)
 		}
 	}
-	filter := ""
-	if m.warnOnly {
-		filter = ", WARN+"
+	// Problems before PoX: on a short terminal the bottom panel is the one cut
+	top = append(top, rule("PROBLEMS", w))
+	for _, p := range m.problems() {
+		top = append(top, " "+level(p.text, p.lv))
 	}
-	top = append(top, rule("LOGS "+m.logSvc+filter, w))
+	top = append(top, rule("POX", w))
+	for _, l := range m.poxLines() {
+		top = append(top, " "+l)
+	}
+	keys := "s start  x stop  r restart  p pull  l logs  e export  ? help  q quit"
+	return m.screen(top, nil, keys, w, h)
+}
 
+// screen lays out a view: top, then the tail of fill, then the status line and the keys at the bottom.
+func (m *uiModel) screen(top, fill []string, keys string, w, h int) string {
 	var bottom []string
 	switch {
 	case m.confirm != "":
@@ -575,28 +606,37 @@ func (m *uiModel) render() string {
 		}
 		bottom = append(bottom, s)
 	}
-	keys := "s start  x stop  r restart  p pull  l logs  w warn+  e export  ? help  q quit"
 	if w < lipgloss.Width(keys) {
 		keys = "? keys  q quit"
 	}
 	bottom = append(bottom, stDim.Render(keys))
+	room := max(h-len(bottom), 0)
+	if len(top) > room {
+		top = top[:room]
+	}
+	if n := room - len(top); len(fill) > n {
+		fill = fill[len(fill)-n:]
+	}
+	out := append(top, fill...)
+	for len(out) < room {
+		out = append(out, "")
+	}
+	return clip(append(out, bottom...), w, h)
+}
 
-	n := max(h-len(top)-len(bottom), 0)
+// renderLogs is the full-screen log view of one service.
+func (m *uiModel) renderLogs(w, h int) string {
+	filter := ""
 	logs := m.lines
 	if m.warnOnly {
+		filter = ", WARN+"
 		logs = m.warns
 		if len(logs) == 0 {
 			logs = []string{stDim.Render(fmt.Sprintf("no warnings or errors in the last %d lines (w shows all)", len(m.lines)))}
 		}
 	}
-	if len(logs) > n {
-		logs = logs[len(logs)-n:]
-	}
-	out := append(top, logs...)
-	for len(out) < h-len(bottom) {
-		out = append(out, "")
-	}
-	return clip(append(out, bottom...), w, h)
+	top := []string{rule("LOGS "+m.logSvc+filter, w)}
+	return m.screen(top, logs, "l next service  w warn+  esc back  q quit", w, h)
 }
 
 // clip makes every line exactly w wide and keeps the first h lines.
@@ -737,6 +777,84 @@ func (m *uiModel) hostLines() []string {
 	return l
 }
 
+type problem struct {
+	text string
+	lv   int
+}
+
+// problems are what needs a look, from state only: containers, whether the node and the API answer,
+// and the chain checks. Log messages change between releases, so none are matched (owner, 2026-11-09).
+func (m *uiModel) problems() []problem {
+	if m.chainAt.IsZero() {
+		return []problem{{"checking…", lvOK}}
+	}
+	var ps []problem
+	add := func(lv int, format string, a ...any) { ps = append(ps, problem{fmt.Sprintf(format, a...), lv}) }
+	running := map[string]bool{}
+	for _, s := range m.shownServices() {
+		switch {
+		case s.State == "exited":
+			add(lvBad, "%s exited with code %d", s.Service, s.ExitCode)
+		case s.State == "restarting":
+			add(lvBad, "%s is restarting (%d restarts)", s.Service, s.Restarts)
+		case s.State == "running" && s.Health == "unhealthy":
+			add(lvBad, "%s is unhealthy", s.Service)
+		case s.State == "running" && s.Restarts > 0 && m.now.Sub(s.Started) < 15*time.Minute:
+			add(lvWarn, "%s restarted %s ago (%d restarts)", s.Service, shortDur(m.now.Sub(s.Started)), s.Restarts)
+		}
+		running[s.Service] = running[s.Service] || s.State == "running"
+	}
+	ci := m.chain
+	if running["stacks-blockchain"] && ci.NodeErr != "" {
+		add(lvBad, "the node doesn't answer on its RPC port: %s", ci.NodeErr)
+	}
+	if running["stacks-blockchain-api"] && ci.APIErr != "" {
+		add(lvBad, "the API doesn't answer: %s", ci.APIErr)
+	}
+	if ci.NodeErr == "" && ci.APIErr == "" {
+		if s, lv := syncStatus(ci, m.now); lv != lvOK {
+			add(lv, "%s", s)
+		}
+		if lag := ci.Tip - ci.APITip; lag > refTolerance {
+			add(lvWarn, "the API is %s blocks behind the node: is it receiving blocks?", commas(lag))
+		}
+	}
+	if !ci.BurnTime.IsZero() && m.now.Sub(ci.BurnTime) > burnStaleAge {
+		add(lvWarn, "no new Bitcoin block for %s: check the Bitcoin peer (BTC_HOST)", shortDur(m.now.Sub(ci.BurnTime)))
+	}
+	if ci.NodeErr == "" && ci.PeersIn+ci.PeersOut == 0 {
+		add(lvBad, "the node has no peers")
+	}
+	if len(ps) == 0 {
+		return []problem{{"none", lvOK}}
+	}
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].lv > ps[j].lv })
+	return ps
+}
+
+// poxLines show the stacking cycle and how many signers signed the latest block. The count is of
+// signatures, not signing weight (blocks need 70% of the weight): the API doesn't say who signed.
+func (m *uiModel) poxLines() []string {
+	ci := m.chain
+	if ci.Pox == nil {
+		return []string{stDim.Render("no PoX data from the node yet")}
+	}
+	p := ci.Pox
+	eta := func(blocks int64) string { return shortDur(time.Duration(blocks) * 10 * time.Minute) }
+	cycle := fmt.Sprintf("cycle   %d, reward phase · %d starts in %s blocks (~%s)", p.Current.ID, p.Next.ID, commas(p.Next.UntilReward), eta(p.Next.UntilReward))
+	if p.Next.UntilPrepare <= 0 {
+		cycle = fmt.Sprintf("cycle   %d, prepare phase for %d · starts in %s blocks (~%s)", p.Current.ID, p.Next.ID, commas(p.Next.UntilReward), eta(p.Next.UntilReward))
+	}
+	l := []string{cycle, fmt.Sprintf("stacked %s · %d so far %s · minimum %s", stx(p.Current.Stacked), p.Next.ID, stx(p.Next.Stacked), stx(p.MinUSTX))}
+	switch {
+	case ci.Signatures >= 0 && ci.Signers > 0:
+		l = append(l, fmt.Sprintf("signed  %d signatures on block %s (%d signers in cycle %d)", ci.Signatures, commas(ci.APITip), ci.Signers, p.Current.ID))
+	case ci.Signatures >= 0:
+		l = append(l, fmt.Sprintf("signed  %d signatures on block %s", ci.Signatures, commas(ci.APITip)))
+	}
+	return l
+}
+
 func (m *uiModel) helpLines() []string {
 	return []string{
 		stHead.Render("sbd ui: keys"),
@@ -746,8 +864,7 @@ func (m *uiModel) helpLines() []string {
 		"  r  restart    sbd restart (asks first)",
 		"  p  pull       sbd pull (then restart to use the new images)",
 		"  e  export     sbd logs export (to exported-logs/)",
-		"  l  logs       show the next service's log",
-		"  w  warn+      show only warnings and errors",
+		"  l  logs       full-screen log: l next service, w warnings only, esc back",
 		"  q  quit       the stack keeps running",
 		"",
 		stHead.Render("In a shell (not in the dashboard)"),
