@@ -54,9 +54,11 @@ It works non-interactively from an answers file (`sbd init --from answers.env`, 
 
 | Panel | Data source | Fallback if monitoring is off |
 |---|---|---|
-| Services, state, uptime, restarts | Docker Engine API (`/containers/json`, inspect) | same |
-| CPU / memory / IO | Prometheus (cAdvisor) | Docker stats stream (`/containers/{id}/stats`) |
+| Services, state, uptime, restarts | `docker compose ps --format json` (5 s) + `docker events` stream | same |
+| CPU / memory / IO | Prometheus (cAdvisor) | `docker stats --format json` stream |
 | Chain: tip, burn height, peers | node `/v2/info`, `/v2/neighbors`; Prometheus for history | direct HTTP polling |
+| Synced / behind | age of the latest Stacks block (`block_time`): synced under 5 min, else "latest block is 3h12m old"; burn block age flagged past 2 h | same |
+| Blocks behind (optional) | a public API's tip, only when `SBD_UI_REFERENCE_API` is set in `.env`; within 15 blocks counts as synced | same |
 | API lag | API `/extended/v1/status` vs node tip | same |
 | Signer health | signer `/metrics` | hidden |
 | Host disk/mem/load | Prometheus (node-exporter) | local `statfs` / `/proc` (Linux) |
@@ -64,7 +66,7 @@ It works non-interactively from an answers file (`sbd init --from answers.env`, 
 | Logs | `docker logs --follow` per selected service, with a level filter | same |
 | Replay status | core `replay status` (same logic as `check_event_replay`) | same |
 
-Actions call the **core** (start/stop/restart/pull/logs export/reset) and show its progress. Destructive actions (`stop`, `reset`, `import`) need a typed confirmation. The ordered stop's 20-minute node timeout must show as progress, not a frozen screen.
+Actions call the **core** (start/stop/restart/pull, log view and export) and show its progress. Start, pull and logs need no confirmation; stop and restart ask y/N (nothing is lost, but the node goes offline). Destructive or long jobs (`reset`, `seed`, `db upgrade`, `bns`, `migrate`, `init`) and settings changes (`env set`, including turning signer/proxy/monitoring on or off) stay CLI-only: the help screen shows the exact command. The ordered stop's node timeout (`STACKS_SHUTDOWN_TIMEOUT`) must show as progress, not a frozen screen.
 
 ## Technology options
 
@@ -111,5 +113,8 @@ Actions call the **core** (start/stop/restart/pull/logs export/reset) and show i
 | T1 | **Settled by the owner (2026-10-25):** Same repo, same binary: part of the `sbd` CLI (`sbd init`, `sbd ui`), released and versioned with the compose files it drives. |
 | T2 | **Settled by the owner (2026-10-25):** GitHub Releases with signed binaries and checksums for linux/darwin/windows × amd64/arm64, plus a ghcr.io image (also used by the `config` renderer and for no-install runs). Package managers (Homebrew, winget) come later. The language is decided under Q25. |
 | T3 | **Settled by the owner (2026-10-25):** `sbd init` and `sbd ui` only. The `manage.sh` shim gains no new commands (it is removed in phase 7). |
-| T4 | **Settled by the owner (2026-10-25):** **Actions from the start.** The first dashboard release includes start/stop/restart/pull/logs export alongside status. Each action runs the same core/compose command as the CLI. Destructive actions (stop, reset, import) need a typed confirmation, and a long stop shows progress. |
+| T4 | **Settled by the owner (2026-10-25):** **Actions from the start.** The first dashboard release includes start/stop/restart/pull/logs export alongside status. Each action runs the same core/compose command as the CLI. Destructive actions (stop, reset, import) need a typed confirmation, and a long stop shows progress. **Revised by the owner (2026-11-09):** the dashboard keeps start/stop/restart/pull/logs only; stop and restart ask y/N; reset, seed, db upgrade, bns, migrate, init and `env set` are CLI-only, so no typed confirmation is needed in the first version. |
 | T5 | **Settled by the owner (2026-10-25):** Yes, as an optional `sbd init` step: seed from the Hiro archive, seed from a local archive, or sync from genesis. `sbd init` runs the containerized seed job (no host root) with progress, after showing the size (~400 GB mainnet) and the Q24 pin/archive version check. |
+| T6 | **Settled by the owner (2026-11-09):** The dashboard runs on the node host (local Docker socket, localhost ports); remote access later. It makes no outbound calls by default: "synced" comes from the age of the latest Stacks block (Run A at tip: 29 s; Nakamoto blocks every few seconds), not from the peers (`/v2/neighbors` reports no heights). A public API comparison is opt-in through `.env` (`SBD_UI_REFERENCE_API`) and allows a 15-block tolerance, since a node is rarely at exactly the public tip. Without monitoring, history is an in-memory ring buffer. |
+| T7 | **Settled by the owner (2026-11-09):** Bubble Tea v2 + Lip Gloss v2 (`charm.land/...`; v1 is unmaintained), pinned to releases at least two weeks old (`bubbletea/v2 v2.1.0`, `lipgloss/v2 v2.0.6` as of 2026-11-09); no Bubbles. Docker data comes from the `docker` CLI, not the Docker SDK: `docker compose ps --format json` every 5 s plus a `docker events` stream, one `docker stats --format json` stream, `docker compose logs -f`. Same daemon/context resolution as `sbd start`, no SDK dependency tree, no socket or named-pipe handling. |
+| T8 | **Settled by the owner (2026-11-09):** First version: services (state, uptime, health, restarts, CPU/mem/IO), chain (tip and block age, burn height and age, API tip and lag, peers, optional "N behind"), host (data-dir free space, load, memory), one log pane (`l` cycles services, WARN+ toggle, `e` exports), whole-stack start/stop/restart/pull, sparklines (node CPU, tip height) from an in-memory buffer (1 h at 5 s) even when monitoring is on, 80×24 with a single-column fallback; without a terminal it exits and points to `sbd status --json`. Fixed refresh (1 s stats, 5 s chain), no `--refresh`. Later: Prometheus history, signer panel, replay status, per-service restart, remote access, alerts panel, mouse. |
