@@ -86,12 +86,12 @@ work on the host itself, and other machines are refused.
 - **Services:** state and health, uptime, CPU, memory, disk read/write per second, restarts.
 - **Chain:** the node's tip and burn height, whether it's synced, the API's tip and lag, peers.
 - **Host:** free space under the data dirs, load, memory, and the last hour of node CPU and tip height.
-- **Problems:** what needs a look, judged from state, not log messages: a container down, unhealthy
-  or just restarted, the node or API not answering, no new block for 5 minutes, the API more than 15
-  blocks behind the node (it isn't receiving blocks), no Bitcoin block for 2 hours, no peers.
 - **PoX:** the stacking cycle and phase, when the next cycle starts, STX stacked, and how many
   signatures the latest block carries out of the cycle's signers (a count, not signing weight: blocks
   need 70% of the weight, and the API doesn't say who signed).
+- **Problems** (last, so it can grow into the free rows): what needs a look, judged from state, not log messages: a container down, unhealthy
+  or just restarted, the node or API not answering, no new block for 5 minutes, the API more than 15
+  blocks behind the node (it isn't receiving blocks), no Bitcoin block for 2 hours, no peers.
 - **Logs:** `l` opens a full-screen log of one service (`l` for the next, `w` for warnings and errors
   only, Esc to go back). Logs aren't on the main screen: the node and API log constantly, mostly noise.
 

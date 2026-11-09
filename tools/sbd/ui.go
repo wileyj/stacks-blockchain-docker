@@ -580,36 +580,47 @@ func (m *uiModel) render() string {
 			top = append(top, " "+l)
 		}
 	}
-	// Problems before PoX: on a short terminal the bottom panel is the one cut
-	top = append(top, rule("PROBLEMS", w))
-	for _, p := range m.problems() {
-		top = append(top, " "+level(p.text, p.lv))
-	}
 	top = append(top, rule("POX", w))
 	for _, l := range m.poxLines() {
 		top = append(top, " "+l)
 	}
+	// Problems come last, so the panels above stay put as the list grows into the free rows; when it
+	// doesn't fit, its last line says how many more there are
 	keys := "s start  x stop  r restart  p pull  l logs  e export  ? help  q quit"
+	top = append(top, rule("PROBLEMS", w))
+	ps := m.problems()
+	if room := h - len(m.bottom(keys, w)) - len(top); len(ps) > room && room > 0 {
+		more := len(ps) - room + 1
+		ps = append(ps[:room-1], problem{fmt.Sprintf("… and %d more", more), lvWarn})
+	}
+	for _, p := range ps {
+		top = append(top, " "+level(p.text, p.lv))
+	}
 	return m.screen(top, nil, keys, w, h)
 }
 
-// screen lays out a view: top, then the tail of fill, then the status line and the keys at the bottom.
-func (m *uiModel) screen(top, fill []string, keys string, w, h int) string {
-	var bottom []string
+// bottom is the status line, if any, and the keys.
+func (m *uiModel) bottom(keys string, w int) []string {
+	var b []string
 	switch {
 	case m.confirm != "":
-		bottom = append(bottom, stWarn.Render(confirmText[m.confirm]))
+		b = append(b, stWarn.Render(confirmText[m.confirm]))
 	case m.status != "" || m.svcErr != "":
 		s := m.status
 		if m.svcErr != "" {
 			s = stBad.Render("docker: " + m.svcErr)
 		}
-		bottom = append(bottom, s)
+		b = append(b, s)
 	}
 	if w < lipgloss.Width(keys) {
 		keys = "? keys  q quit"
 	}
-	bottom = append(bottom, stDim.Render(keys))
+	return append(b, stDim.Render(keys))
+}
+
+// screen lays out a view: top, then the tail of fill, then the status line and the keys at the bottom.
+func (m *uiModel) screen(top, fill []string, keys string, w, h int) string {
+	bottom := m.bottom(keys, w)
 	room := max(h-len(bottom), 0)
 	if len(top) > room {
 		top = top[:room]

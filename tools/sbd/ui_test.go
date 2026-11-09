@@ -391,6 +391,31 @@ func TestActionsAreCLICommands(t *testing.T) {
 	}
 }
 
+func TestProblemsLastAndOverflow(t *testing.T) {
+	m := uiFixture(t)
+	m.w, m.h = 80, 24
+	out := m.render()
+	if strings.Index(out, "── POX") > strings.Index(out, "── PROBLEMS") {
+		t.Error("PROBLEMS isn't below POX")
+	}
+	// More problems than rows: the last visible line counts the rest, the keys stay
+	m.chain.APITip -= 120
+	m.chain.BlockTime = m.now.Add(-20 * time.Minute)
+	m.chain.BurnTime = m.now.Add(-3 * time.Hour)
+	m.chain.PeersOut = 0
+	all := len(m.problems())
+	m.h = 21
+	out = m.render()
+	lines := strings.Split(out, "\n")
+	if len(lines) != 21 || !strings.Contains(lines[20], "q quit") {
+		t.Fatalf("layout broke:\n%s", out)
+	}
+	shown := strings.Count(out[strings.Index(out, "── PROBLEMS"):], "\n") - 1
+	if !strings.Contains(out, fmt.Sprintf("… and %d more", all-shown+1)) {
+		t.Errorf("%d problems, %d rows, no overflow note:\n%s", all, shown, out)
+	}
+}
+
 func TestProblems(t *testing.T) {
 	m := uiFixture(t)
 	texts := func() string {
