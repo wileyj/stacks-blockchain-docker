@@ -3,7 +3,7 @@
 # so the bind mounts compose creates resolve on the host:
 #   docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" \
 #     ghcr.io/<owner>/sbd status
-FROM golang:1.25 AS build
+FROM golang:1.27 AS build
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./

@@ -325,6 +325,10 @@ func TestKeys(t *testing.T) {
 	if strings.Contains(out, "INFO [39]") || !strings.Contains(out, "WARN [99]") || !strings.Contains(out, "LOGS stacks-blockchain, WARN+") {
 		t.Errorf("warn filter:\n%s", out)
 	}
+	m.warns = nil
+	if !strings.Contains(m.render(), "no warnings or errors in the last 41 lines") {
+		t.Error("empty WARN+ view has no note")
+	}
 	press("l")
 	if m.logSvc != "stacks-blockchain-api" || len(m.lines) != 0 {
 		t.Errorf("l: %q %d", m.logSvc, len(m.lines))

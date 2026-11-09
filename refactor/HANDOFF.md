@@ -259,11 +259,11 @@ Designed with the owner one decision at a time (13 T6–T8, T4 revised) and buil
 - **Data:** the `docker` CLI only (no Docker SDK): `compose ps` + `inspect` every 5 s and on `docker events`, one `docker stats` stream, `compose logs -f` for the selected service; node and API over HTTP at their published local ports, else (Linux) the container address. Disk IO comes from the container's cgroup `io.stat` (docker stats rounds to three digits, too coarse for a rate; the busiest device counts, since LVM IO shows on both the LV and the disk below).
 - **Synced:** latest API block under 5 min old; with `SBD_UI_REFERENCE_API` set, within 15 blocks of that API's tip. No outbound calls by default.
 - **Actions:** `s`/`x`/`r`/`p`/`e` run the CLI itself (`sbd start|stop|restart|pull|logs export`) in the terminal and return on Enter; stop and restart ask y/N. Destructive jobs and settings stay CLI-only (the help screen lists them).
-- **Libraries:** Bubble Tea `v2.0.9` and Lip Gloss `v2.0.6`. Bubble Tea `v2.0.10`+ needs Go 1.26, and the repo builds with Go 1.25 everywhere (CI, release, Dockerfiles).
+- **Libraries:** Bubble Tea `v2.1.0` and Lip Gloss `v2.0.6` (first built on `v2.0.9`: `v2.0.10`+ needs Go 1.26).
 - **Verified (2026-11-09):** against Run A (read-only: views, `x` then `n`, `e`), and start, restart and stop from the dashboard on a scratch testnet project (`sbd-ui-test`, removed). The dashboard used 1.1% CPU (plus 0.3% for its docker children) and 16 MB at 80×24 with the node logging ~20 lines/s, after batching stats per second and log lines per 250 ms. Quitting leaves the stack running and no child processes.
 
 **Follow-ups:**
-- **Go toolchain:** Go 1.25 is out of upstream support since Go 1.27 (Aug 2026). Moving CI, release and the three Dockerfiles to a supported Go would also allow Bubble Tea 2.1.
+- **Go toolchain: done (owner, 2026-11-09).** Go 1.25 left upstream support with Go 1.27, so the three modules (`go 1.27.0`), their Dockerfiles, CI and the release workflow moved to Go 1.27 (1.27.3 at the time). All three images build (the seed image runs its tests in the build), and sbd/config vet and tests, compose-config (29/29), check-config and the harness (48/48, as before) pass.
 - Later (T8): Prometheus history, a signer panel, replay status, per-service restart, remote access, an alerts panel, mouse.
 
 ## Phase 5: soak (started 2026-11-03, in progress)

@@ -585,6 +585,9 @@ func (m *uiModel) render() string {
 	logs := m.lines
 	if m.warnOnly {
 		logs = m.warns
+		if len(logs) == 0 {
+			logs = []string{stDim.Render(fmt.Sprintf("no warnings or errors in the last %d lines (w shows all)", len(m.lines)))}
+		}
 	}
 	if len(logs) > n {
 		logs = logs[len(logs)-n:]

@@ -46,8 +46,8 @@ Getting `sbd`:
   socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:
   `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
   (provenance: `gh attestation verify oci://ghcr.io/<owner>/sbd:<version> --repo <owner>/stacks-blockchain-docker`)
-- **From source** with Go 1.25, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
-  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
+- **From source** with Go 1.27, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
+  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.27 go build -o sbd .`.
 
 ## Services
 
