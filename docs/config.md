@@ -38,6 +38,7 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 | `API_BIND_ADDR`, `RPC_BIND_ADDR` | Host address the API (3999) and the node RPC (20443) are published on. To serve the API to other machines, prefer the `proxy` profile | `127.0.0.1` |
 | `PROXY_BIND_ADDR`, `NGINX_PROXY_PORT` | The `proxy` profile (nginx, HTTP), the way to serve the API to other machines. HTTPS: terminate it in front (a CDN proxy, a load balancer) | `0.0.0.0`, `80` |
 | `POSTGRES_LOCAL`, `POSTGRES_LOCAL_PORT` | `1` publishes postgres on `127.0.0.1:POSTGRES_LOCAL_PORT` for local tools. It is never published beyond this host: only the API uses it | `0`, `5432` |
+| `SBD_UI_REFERENCE_API`          | `sbd ui` only: a public API (e.g. `https://api.hiro.so`) whose tip the dashboard compares the node with; within 15 blocks counts as synced. Unset, "synced" means the latest block is under 5 minutes old, and the dashboard makes no outbound calls | empty |
 | `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_ADMIN_PASSWORD`, `PROMETHEUS_RETENTION`, `PROMETHEUS_APP_SCRAPE_INTERVAL`, `MONITORING_GRAFANA`, `MONITORING_CONTAINER_METRICS` | The `monitoring` profile, see [Monitoring](./monitoring.md). Always on 127.0.0.1 | `9090`, `3000`, empty, `30d`, `15s`, `1`, `1` |
 | `STACKS_BLOCKCHAIN_VERSION`     | Stacks Blockchain Docker image version                | `latest released version` |
 | `STACKS_SIGNER_VERSION`         | Stacks Signer Docker image version                    | `latest released version` |

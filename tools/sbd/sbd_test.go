@@ -24,6 +24,7 @@ type fakeDocker struct {
 	version string
 	config  string // docker compose config --format json output
 	info    string // docker info --format '{{json .}}' output
+	inspect string // docker inspect output (any containers)
 	exit    int
 	ran     []string
 }
@@ -46,6 +47,9 @@ func (f *fakeDocker) Output(args []string) ([]byte, error) {
 		return []byte(`{"ServerVersion":"28.0.0","OperatingSystem":"Debian","Architecture":"x86_64","MemTotal":68719476736,"NCPU":20}`), nil
 	case "compose --profile * config --format json":
 		return []byte(f.config), nil
+	}
+	if args[0] == "inspect" {
+		return []byte(f.inspect), nil
 	}
 	return nil, nil
 }

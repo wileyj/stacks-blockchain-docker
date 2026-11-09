@@ -28,6 +28,7 @@ both: neither keeps state the other doesn't see.
 | Upgrade the API database after raising `POSTGRES_VERSION` (stopped stack) | `docker compose run --rm pg-upgrade` (`--dry-run`, `--mode auto\|clone\|copy\|link`) | `sbd db upgrade` |
 | Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
 | Preflight checks | — | `sbd doctor` |
+| Live dashboard | `docker compose --profile '*' ps`, `docker stats`, `docker compose logs -f` | `sbd ui` (see [Dashboard](#dashboard)) |
 | Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
@@ -77,6 +78,28 @@ work on the host itself, and other machines are refused.
 | Reach the database from tools on this host | `POSTGRES_LOCAL=1`: published on `127.0.0.1:5432` (`POSTGRES_LOCAL_PORT`). It can't be published beyond this host: the API is its only client. Ad hoc: `docker compose exec postgres psql -U postgres` |
 | Publish the API or RPC port directly | `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0` (`sbd doctor` flags it) |
 | See metrics, Prometheus or Grafana from elsewhere | an SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 <host>`: they're never published beyond this host |
+
+## Dashboard
+
+`sbd ui` shows the stack live in the terminal, and works the same on a stack started with plain
+`docker compose up -d`:
+- **Services:** state and health, uptime, CPU, memory, disk read/write per second, restarts.
+- **Chain:** the node's tip and burn height, whether it's synced, the API's tip and lag, peers.
+- **Host:** free space under the data dirs, load, memory, and the last hour of node CPU and tip height.
+- **Logs:** one service at a time (`l` for the next, `w` for warnings and errors only).
+
+"Synced" means the latest block the API has is under 5 minutes old (Stacks blocks come every few
+seconds). Set `SBD_UI_REFERENCE_API` (e.g. `https://api.hiro.so`) to compare with a public tip instead,
+where being within 15 blocks counts as synced; without it the dashboard makes no outbound calls.
+
+Keys `s`, `x`, `r`, `p` and `e` run `sbd start`, `stop`, `restart`, `pull` and `logs export` in the
+terminal, showing their output; stop and restart ask first. Everything that deletes or replaces data,
+or changes settings (`seed`, `reset`, `db upgrade`, `env set` ...), stays in the shell. `q` quits the
+dashboard and leaves the stack running.
+
+Run it on the node's host: it reads the node and the API on their local ports (or, when those aren't
+published, at their container addresses on Linux), and its disk and memory figures are this host's. It
+needs a terminal; scripts can use `sbd status --json`.
 
 ## Stopping
 

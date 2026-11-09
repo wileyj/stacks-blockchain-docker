@@ -14,7 +14,7 @@ Use this to pick the work up in a new session or on another machine. The full in
   - plain `docker compose` is a first-class path (§2.1, §11);
   - the Go CLI/TUI `sbd` is optional;
   - heavy jobs run in containers (config render, seed, pg-upgrade, bns).
-- **Decisions:** all settled, Q1–Q27, M1–M6 and T1–T5. See the README [Decisions log](./README.md#decisions-log) and [11 §B](./11-refactor-guidance.md). Deferred TODOs are in [11 §F](./11-refactor-guidance.md).
+- **Decisions:** all settled, Q1–Q27, M1–M6 and T1–T8. See the README [Decisions log](./README.md#decisions-log) and [11 §B](./11-refactor-guidance.md). Deferred TODOs are in [11 §F](./11-refactor-guidance.md).
 - **Verification:** [15](./15-verification-log.md) records every check.
 - **Harness:** `refactor/harness/run.sh --check` should report 50/50 PASS against `d2e558c` behavior. On Linux, GNU sed is native.
 
@@ -246,12 +246,25 @@ Docs: `usage.md` and `upgrade.md` now point to re-seeding; `issues.md` covers re
 
 ## Phase 6: `sbd init`, done (2026-11-05, revised 2026-11-06)
 
-Owner, 2026-11-05: "init", not "wizard"; still needed. Walked through step by step with the owner on 2026-11-06; the steps and their reasons are in 13 §1. Highlights: preflight warns only; Enter keeps the existing network, else mainnet; node and API always run, signer off by default and explained before its key is asked; a real Bitcoin P2P handshake; no TLS in the proxy (port 80 only); generated secrets listed at the end like Helm notes; an existing chainstate is kept unless the user asks to seed or resync. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env` (then optionally runs seed/reset/start). Dependency: `golang.org/x/term`. `sbd ui` not started.
+Owner, 2026-11-05: "init", not "wizard"; still needed. Walked through step by step with the owner on 2026-11-06; the steps and their reasons are in 13 §1. Highlights: preflight warns only; Enter keeps the existing network, else mainnet; node and API always run, signer off by default and explained before its key is asked; a real Bitcoin P2P handshake; no TLS in the proxy (port 80 only); generated secrets listed at the end like Helm notes; an existing chainstate is kept unless the user asks to seed or resync. `--from answers.env`, `--yes`; refuses without a terminal otherwise. Writes only `.env` (then optionally runs seed/reset/start). Dependency: `golang.org/x/term`.
 
 **Follow-ups from the walk-through:**
 - **HTTPS on 443 as the default** (owner): TLS was removed from the proxy for now; revisit the options (ACME, a CDN, ...).
 - **Enforce node + API in the config job** too (Q19 revised): it fails CI's `compose-only boot (mainnet node)`, a required check, so the CI matrix and the branch ruleset change together.
 - **The default mainnet Bitcoin peer `bitcoin.mainnet.stacks.org:8333` is overloaded** (2026-11-06): it accepts TCP and turns most handshakes away (`est.stacksnodes.org` is the same machine). A real stacks-node still synced from it after 3 "Connection broken" retries (16/32/60 s), about 2.5 min. Owner: many nodes use it (thundering herd); its capacity won't change (cost); `cet`/`sgt.stacksnodes.org` answer but aren't public and may go away, so no alternates are configured. **Decided:** recommend running your own Bitcoin node (sample.env, requirements, README, config); `sbd init` doesn't probe the default peer and handshakes only a peer the user enters.
+
+## Phase 6: `sbd ui` dashboard, done (2026-11-09)
+
+Designed with the owner one decision at a time (13 T6–T8, T4 revised) and built in `tools/sbd/ui.go` (`uidata.go` for the data):
+- **Data:** the `docker` CLI only (no Docker SDK): `compose ps` + `inspect` every 5 s and on `docker events`, one `docker stats` stream, `compose logs -f` for the selected service; node and API over HTTP at their published local ports, else (Linux) the container address. Disk IO comes from the container's cgroup `io.stat` (docker stats rounds to three digits, too coarse for a rate; the busiest device counts, since LVM IO shows on both the LV and the disk below).
+- **Synced:** latest API block under 5 min old; with `SBD_UI_REFERENCE_API` set, within 15 blocks of that API's tip. No outbound calls by default.
+- **Actions:** `s`/`x`/`r`/`p`/`e` run the CLI itself (`sbd start|stop|restart|pull|logs export`) in the terminal and return on Enter; stop and restart ask y/N. Destructive jobs and settings stay CLI-only (the help screen lists them).
+- **Libraries:** Bubble Tea `v2.0.9` and Lip Gloss `v2.0.6`. Bubble Tea `v2.0.10`+ needs Go 1.26, and the repo builds with Go 1.25 everywhere (CI, release, Dockerfiles).
+- **Verified (2026-11-09):** against Run A (read-only: views, `x` then `n`, `e`), and start, restart and stop from the dashboard on a scratch testnet project (`sbd-ui-test`, removed). The dashboard used 1.1% CPU (plus 0.3% for its docker children) and 16 MB at 80×24 with the node logging ~20 lines/s, after batching stats per second and log lines per 250 ms. Quitting leaves the stack running and no child processes.
+
+**Follow-ups:**
+- **Go toolchain:** Go 1.25 is out of upstream support since Go 1.27 (Aug 2026). Moving CI, release and the three Dockerfiles to a supported Go would also allow Bubble Tea 2.1.
+- Later (T8): Prometheus history, a signer panel, replay status, per-service restart, remote access, an alerts panel, mouse.
 
 ## Phase 5: soak (started 2026-11-03, in progress)
 
