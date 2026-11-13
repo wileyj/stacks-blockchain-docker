@@ -4,7 +4,7 @@ rule_files:
   - ../../conf/monitoring/rules/stacks.yml
 evaluation_interval: 1m
 tests:
-  ## Tip frozen while the node has peers: fires after 30m of no change + 5m
+  ## Tip frozen while the node has peers: fires after 5m of no change + 5m
   - interval: 1m
     input_series:
       - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
@@ -12,16 +12,31 @@ tests:
       - series: 'stacks_node_neighbors_outbound{job="stacks-node"}'
         values: '8x60'
     alert_rule_test:
-      - eval_time: 30m
+      - eval_time: 18m
         alertname: StacksTipStalled
         exp_alerts: []
-      - eval_time: 50m
+      - eval_time: 21m
         alertname: StacksTipStalled
         exp_alerts:
           - exp_labels: {severity: critical, job: stacks-node}
             exp_annotations:
-              summary: "Stacks tip hasn't advanced for 35 minutes"
-              description: "No new Stacks block in 35 minutes although the node has peers. A blocked event observer (API or signer down) stalls the node (refactor/09 D46/D55)."
+              summary: "Stacks tip hasn't advanced for 10 minutes"
+              description: "No new Stacks block in 10 minutes although the node has peers. Either the node can't get a block it is missing from its peers, or a blocked event observer (API or signer down) is stalling it (refactor/09 D46/D55)."
+
+  ## A network-wide pause at a tenure change (6 min on the mainnet soak, 2026-11-13) must not fire
+  - interval: 1m
+    input_series:
+      - series: 'stacks_node_stacks_tip_height{job="stacks-node"}'
+        values: '100+1x10 110x6 111+1x20'
+      - series: 'stacks_node_neighbors_outbound{job="stacks-node"}'
+        values: '8x40'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: StacksTipStalled
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: StacksTipStalled
+        exp_alerts: []
 
   ## No peers yet (boot): a frozen tip must not page
   - interval: 1m
