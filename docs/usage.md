@@ -154,7 +154,8 @@ A deferred index builds with `CREATE INDEX CONCURRENTLY` while the stack runs (a
 mainnet NFT index). Until it's done, don't run `VACUUM` or `ANALYZE` on its table (`nft_events`): the
 two deadlock, postgres cancels the build, and `build-indexes` starts it over from the beginning.
 
-With `sbd`, the same options follow `sbd seed`, for example `sbd seed --dry-run`.
+With `sbd`, the same options follow `sbd seed`, for example `sbd seed --dry-run`. `scripts/seed-chainstate.sh`
+still works too: it runs the same job (`-y` is `--yes`), with no root or host tools needed any more.
 
 ## Upgrade the API database to a new PostgreSQL major
 
