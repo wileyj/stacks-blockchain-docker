@@ -65,10 +65,8 @@ func TestObserversFollowProfiles(t *testing.T) {
 		want     []string
 		stacker  bool
 	}{
-		{"node", nil, false},
 		{"node,api", []string{"stacks-blockchain-api:3700"}, false},
 		{"node,api,signer", []string{"stacks-blockchain-api:3700", "stacks-signer:30000"}, true},
-		{"node,signer", []string{"stacks-signer:30000"}, true},
 		{" Node , API ", []string{"stacks-blockchain-api:3700"}, false},
 		{"*", []string{"stacks-blockchain-api:3700", "stacks-signer:30000"}, true},
 	} {
@@ -99,7 +97,7 @@ func TestDeploymentKeys(t *testing.T) {
 	}
 
 	// testnet uses TBTC_* and keeps the template's network definition
-	m = renderNode(t, baseEnv("testnet", "node"), "")
+	m = renderNode(t, baseEnv("testnet", "node,api"), "")
 	burn = m["burnchain"].(map[string]any)
 	if burn["peer_host"] != "tbtc.example" || burn["mode"] != "krypton" {
 		t.Errorf("testnet burnchain: %v", burn)
@@ -113,7 +111,7 @@ func TestDeploymentKeys(t *testing.T) {
 }
 
 func TestFollowerWithoutRPCCredentials(t *testing.T) {
-	kv := baseEnv("mainnet", "node")
+	kv := baseEnv("mainnet", "node,api")
 	kv["BTC_RPC_USER"], kv["BTC_RPC_PASS"] = "", ""
 	burn := renderNode(t, kv, "")["burnchain"].(map[string]any)
 	if _, ok := burn["username"]; ok {
@@ -125,7 +123,7 @@ func TestFollowerWithoutRPCCredentials(t *testing.T) {
 }
 
 func TestValuesAreEscaped(t *testing.T) {
-	kv := baseEnv("mainnet", "node")
+	kv := baseEnv("mainnet", "node,api")
 	kv["AUTH_TOKEN"] = `a"b'c\d` + "\nx"
 	m := renderNode(t, kv, "")
 	if got := m["connection_options"].(map[string]any)["auth_token"]; got != kv["AUTH_TOKEN"] {
@@ -159,7 +157,7 @@ events_keys = ["*"]
 }
 
 func TestSigner(t *testing.T) {
-	kv := baseEnv("testnet", "node,signer")
+	kv := baseEnv("testnet", "node,api,signer")
 	s, _ := SettingsFromEnv(env(kv))
 	tmpl, _ := os.ReadFile(filepath.Join(repoConf, "testnet", "Signer.toml.sample"))
 	out, err := RenderSigner(tmpl, nil, s, "Signer.toml.sample")
@@ -204,6 +202,9 @@ func TestP2PAddress(t *testing.T) {
 func TestSettingsErrors(t *testing.T) {
 	for name, kv := range map[string]map[string]string{
 		"no .env":         {},
+		"node only":       {"NETWORK": "mainnet", "COMPOSE_PROFILES": "node"},
+		"api only":        {"NETWORK": "mainnet", "COMPOSE_PROFILES": "api,monitoring"},
+		"no profiles":     {"NETWORK": "mainnet"},
 		"mocknet":         {"NETWORK": "mocknet"},
 		"bad port":        {"NETWORK": "mainnet", "BTC_RPC_PORT": "83a2"},
 		"bad timeout":     {"NETWORK": "mainnet", "API_OBSERVER_TIMEOUT_MS": "1m"},
@@ -255,7 +256,7 @@ func TestRunSignerFileMode(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(repoConf, "mainnet", f))
 		os.WriteFile(filepath.Join(dir, f), b, 0o644)
 	}
-	if err := run(root, env(baseEnv("mainnet", "node,signer"))); err != nil {
+	if err := run(root, env(baseEnv("mainnet", "node,api,signer"))); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(filepath.Join(dir, "Signer.toml"))

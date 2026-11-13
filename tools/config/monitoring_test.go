@@ -22,10 +22,9 @@ func TestScrapeTargetsFollowProfiles(t *testing.T) {
 		profiles, extra string
 		want            string
 	}{
-		{"node,monitoring", "", "prometheus=localhost:9090 node-exporter=node-exporter:9100 cadvisor=cadvisor:8080 stacks-node=stacks-blockchain:9153"},
 		{"node,api,monitoring", "", "prometheus=localhost:9090 node-exporter=node-exporter:9100 cadvisor=cadvisor:8080 stacks-node=stacks-blockchain:9153 stacks-api=stacks-blockchain-api:9153 postgres=postgres-exporter:9187"},
-		{"node,signer,monitoring", "", "prometheus=localhost:9090 node-exporter=node-exporter:9100 cadvisor=cadvisor:8080 stacks-node=stacks-blockchain:9153 stacks-signer=stacks-signer:9154"},
-		{"node,monitoring", "0", "prometheus=localhost:9090 node-exporter=node-exporter:9100 stacks-node=stacks-blockchain:9153"},
+		{"node,api,signer,monitoring", "", "prometheus=localhost:9090 node-exporter=node-exporter:9100 cadvisor=cadvisor:8080 stacks-node=stacks-blockchain:9153 stacks-api=stacks-blockchain-api:9153 postgres=postgres-exporter:9187 stacks-signer=stacks-signer:9154"},
+		{"node,api,monitoring", "0", "prometheus=localhost:9090 node-exporter=node-exporter:9100 stacks-node=stacks-blockchain:9153 stacks-api=stacks-blockchain-api:9153 postgres=postgres-exporter:9187"},
 	} {
 		kv := baseEnv("mainnet", tc.profiles)
 		kv["MONITORING_CONTAINER_METRICS"] = tc.extra
@@ -40,7 +39,7 @@ func TestScrapeTargetsFollowProfiles(t *testing.T) {
 }
 
 func TestScrapePortsFollowEnv(t *testing.T) {
-	kv := baseEnv("testnet", "node,signer,monitoring")
+	kv := baseEnv("testnet", "node,api,signer,monitoring")
 	kv["NODE_METRICS_PORT"], kv["SIGNER_METRICS_PORT"] = "19153", "19154"
 	s, _ := SettingsFromEnv(env(kv))
 	out := string(RenderPrometheus(s))
@@ -52,7 +51,7 @@ func TestScrapePortsFollowEnv(t *testing.T) {
 }
 
 func TestContainerMetricsSwitch(t *testing.T) {
-	kv := baseEnv("mainnet", "node")
+	kv := baseEnv("mainnet", "node,api")
 	kv["MONITORING_CONTAINER_METRICS"] = "false"
 	if _, err := SettingsFromEnv(env(kv)); err == nil || !strings.Contains(err.Error(), "0 or 1") {
 		t.Errorf("a non 0/1 value must fail clearly, got %v", err)

@@ -71,6 +71,10 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 			s.Profiles[p] = true
 		}
 	}
+	// The node and the API always run (owner, 2026-11-06, Q19 revised); sbd refuses the same
+	if !s.Profiles["node"] || !s.Profiles["api"] {
+		return s, fmt.Errorf("COMPOSE_PROFILES=%q must include node and api (they always run); add any of signer, proxy, monitoring", getenv("COMPOSE_PROFILES"))
+	}
 
 	// Testnet has its own BTC peer and signer key variables (contract §A.15)
 	btc, key := "BTC_", "SIGNER_PRIVATE_KEY"

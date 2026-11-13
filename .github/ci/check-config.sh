@@ -31,7 +31,7 @@ check() {
 }
 
 for network in "${NETWORKS[@]}"; do
-	for mode in node node,api node,api,signer; do
+	for mode in node,api node,api,signer; do
 		work="${TMP}/${network}-${mode//,/-}"
 		if ! out=$(render "${work}" "${network}" "${mode}" 2>&1); then
 			echo "FAIL ${network} ${mode}: config job"; echo "${out}" | tail -5 | sed 's/^/     /'
