@@ -44,6 +44,9 @@ type Settings struct {
 	// P2PAddress is the address peers reach this node on (host:port). Empty, the default, is a node
 	// behind NAT: it connects out to peers and accepts none from the internet (owner, 2026-11-13)
 	P2PAddress string
+	// The proxy profile's HTTPS (owner, 2026-11-13): off by default
+	ProxyTLS                    bool
+	ProxyDomain, ProxyACMEEmail string
 }
 
 var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
@@ -94,6 +97,9 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
 	}
 	s.APIPort = orDefault(getenv("STACKS_BLOCKCHAIN_API_PORT"), "3999")
+	if err := proxySettings(&s, getenv); err != nil {
+		return s, err
+	}
 	s.P2PAddress = strings.TrimSpace(getenv("STACKS_P2P_ADDRESS"))
 	if err := checkP2PAddress(s.P2PAddress); err != nil {
 		return s, err

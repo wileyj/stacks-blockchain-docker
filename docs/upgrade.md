@@ -71,10 +71,22 @@ new one.
 
 The API (3999) and the node RPC (20443) used to be published on every interface. They now listen on
 `127.0.0.1` only; the node's P2P port stays public. If other machines use your API, add the `proxy`
-profile (nginx on port 80), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
+profile (now Caddy, see below), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
 `EXPOSE_POSTGRES` and `compose.postgres-port.yaml` are replaced by `POSTGRES_LOCAL=1`, which publishes
 postgres on 127.0.0.1 only (it can no longer be published beyond this host), and
 `METRICS_BIND_ADDR` / `MONITORING_BIND` are gone: monitoring is never published beyond this host.
 `sbd migrate` lists the settings that changed. See [Exposing services](./usage.md#exposing-services).
 
 _API event replay (`-a export` / `-a import`) was removed: the archive snapshots replace it._
+
+## The proxy is Caddy (2026-11)
+
+The `proxy` profile's nginx service is replaced by Caddy, in a service named `proxy`: HTTP on port 80
+as before, and HTTPS with `PROXY_TLS=1` (see [Exposing services](./usage.md#exposing-services)).
+`NGINX_PROXY_PORT` is now `PROXY_HTTP_PORT`. The old `nginx` container isn't part of the project any
+more, so stop it with the old files still in place, or remove it afterwards:
+
+```bash
+docker compose --profile '*' down --remove-orphans
+docker compose up -d
+```

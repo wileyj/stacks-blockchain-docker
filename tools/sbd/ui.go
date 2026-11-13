@@ -335,7 +335,7 @@ func (m *uiModel) shownServices() []uiService {
 			out = append(out, s)
 		}
 	}
-	rank := map[string]int{"stacks-blockchain": 0, "stacks-blockchain-api": 1, "postgres": 2, "stacks-signer": 3, "nginx": 4}
+	rank := map[string]int{"stacks-blockchain": 0, "stacks-blockchain-api": 1, "postgres": 2, "stacks-signer": 3, "proxy": 4}
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, ok := rank[out[i].Service]
 		if !ok {

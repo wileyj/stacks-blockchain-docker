@@ -78,8 +78,8 @@ func readEnv(t *testing.T, dir string) map[string]string {
 func TestInitFreshInstall(t *testing.T) {
 	dir, c := initProject(t, "-")
 	host, port, _ := net.SplitHostPort(fakePeer(t, btcMagic["testnet"], "/Satoshi:25.1.0/", 35619, false))
-	// network, signer, proxy, monitoring, BTC host, port, P2P reachable, data root, write, bootstrap, start now
-	p := &scripted{answers: []string{"testnet", "n", "y", "y", host, port, "", "", "y", "genesis", "n"}}
+	// network, signer, proxy, monitoring, HTTPS (default no), BTC host, port, P2P reachable, data root, write, bootstrap, start now
+	p := &scripted{answers: []string{"testnet", "n", "y", "y", "", host, port, "", "", "y", "genesis", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -102,8 +102,8 @@ func TestInitFreshInstall(t *testing.T) {
 		}
 	}
 	for _, q := range p.asked {
-		if strings.Contains(q, "Run the Stacks Blockchain API") || strings.Contains(q, "HTTPS") {
-			t.Errorf("the API always runs and HTTPS isn't asked: %q", q)
+		if strings.Contains(q, "Run the Stacks Blockchain API") {
+			t.Errorf("the API always runs: %q", q)
 		}
 	}
 }
@@ -240,5 +240,28 @@ func TestInitP2PAddress(t *testing.T) {
 	}
 	if v := readEnv(t, dir)["STACKS_P2P_ADDRESS"]; v != "203.0.113.7:20444" || !strings.Contains(p.out.String(), "peers can't reach 0.0.0.0") {
 		t.Errorf("got %q:\n%s", v, p.out.String())
+	}
+}
+
+// The proxy serves HTTP unless HTTPS is asked for; a domain gets Let's Encrypt (owner, 2026-11-13)
+func TestInitProxyHTTPS(t *testing.T) {
+	for _, tc := range []struct {
+		answers     []string
+		tls, domain string
+	}{
+		// network, signer, proxy yes, monitoring, HTTPS?, [domain], host, port, P2P, data, write, bootstrap, start
+		{[]string{"", "n", "y", "n", "n", "", "", "", "", "y", "genesis", "n"}, "", ""},
+		{[]string{"", "n", "y", "n", "y", "", "", "", "", "", "y", "genesis", "n"}, "1", ""},
+		{[]string{"", "n", "y", "n", "y", "https://bad", "Wileyj.net", "", "", "", "", "y", "genesis", "n"}, "1", "wileyj.net"},
+	} {
+		dir, c := initProject(t, initSample)
+		p := &scripted{answers: tc.answers}
+		if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
+			t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
+		}
+		e := readEnv(t, dir)
+		if e["PROXY_TLS"] != tc.tls || e["PROXY_DOMAIN"] != tc.domain || !strings.Contains(e["COMPOSE_PROFILES"], "proxy") {
+			t.Errorf("%v: PROXY_TLS=%q PROXY_DOMAIN=%q\n%s", tc.answers, e["PROXY_TLS"], e["PROXY_DOMAIN"], p.out.String())
+		}
 	}
 }

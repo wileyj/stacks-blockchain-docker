@@ -39,7 +39,7 @@ services:
   stacks-blockchain-api: {container_name: ${P}-stacks-blockchain-api, ports: !reset []}
   stacks-blockchain: {container_name: ${P}-stacks-blockchain, ports: !reset []}
   stacks-signer: {container_name: ${P}-stacks-signer, ports: !reset []}
-  nginx: {container_name: ${P}-nginx, ports: !reset []}
+  proxy: {container_name: ${P}-proxy, ports: !reset []}
   prometheus: {container_name: ${P}-prometheus, ports: !reset []}
   grafana: {container_name: ${P}-grafana, ports: !reset []}
   cadvisor: {container_name: ${P}-cadvisor}
@@ -77,7 +77,7 @@ done
 
 echo "== hold ${BOOT_SECS}s"
 sleep "${BOOT_SECS}"
-for svc in postgres stacks-blockchain-api stacks-blockchain stacks-signer nginx prometheus grafana cadvisor node-exporter postgres-exporter; do
+for svc in postgres stacks-blockchain-api stacks-blockchain stacks-signer proxy prometheus grafana cadvisor node-exporter postgres-exporter; do
 	cid=$(dc ps -aq "${svc}" 2>/dev/null || true)
 	[ -n "${cid}" ] || continue
 	read -r state restarts health < <(docker inspect -f '{{.State.Status}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "${cid}")

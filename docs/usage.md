@@ -58,7 +58,7 @@ Getting `sbd`:
 | `node` | stacks-node | |
 | `api` | Stacks Blockchain API and postgres | The node delivers events to the API, so a configured API is a liveness dependency of the node |
 | `signer` | stacks-signer | Needs `SIGNER_PRIVATE_KEY` (testnet: `TESTNET_SIGNER_PRIVATE_KEY`) |
-| `proxy` | nginx on port 80, on all interfaces | **The way to serve the API to other machines** (see below) |
+| `proxy` | Caddy on port 80 (and 443 with `PROXY_TLS=1`), on all interfaces | **The way to serve the API to other machines** (see below) |
 | `monitoring` | Prometheus, Grafana, exporters on 127.0.0.1 | Set `GRAFANA_ADMIN_PASSWORD` first; see [Monitoring](./monitoring.md) |
 
 `node` and `api` always run; `signer`, `proxy` and `monitoring` are optional. After removing a profile, stop
@@ -73,8 +73,8 @@ work on the host itself, and other machines are refused.
 
 | To | Do |
 |---|---|
-| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): nginx on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
-| ... over HTTPS | terminate TLS in front of the proxy: a CDN proxy (e.g. Cloudflare), a load balancer or your own reverse proxy, forwarding to port 80 |
+| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): Caddy on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
+| ... over HTTPS | `PROXY_TLS=1`: HTTPS on 443, and HTTP redirects to it. With `PROXY_DOMAIN=api.example.org`, Caddy gets and renews a Let's Encrypt certificate: the name must point at this host, and ports 80 and 443 be reachable from the internet (forward them behind NAT). Without a domain, a self-signed certificate (clients must accept it, e.g. `curl -k`). Or keep HTTP and terminate TLS in front (a CDN proxy, a load balancer) |
 | Reach the database from tools on this host | `POSTGRES_LOCAL=1`: published on `127.0.0.1:5432` (`POSTGRES_LOCAL_PORT`). It can't be published beyond this host: the API is its only client. Ad hoc: `docker compose exec postgres psql -U postgres` |
 | Publish the API or RPC port directly | `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0` (`sbd doctor` flags it) |
 | See metrics, Prometheus or Grafana from elsewhere | an SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 <host>`: they're never published beyond this host |

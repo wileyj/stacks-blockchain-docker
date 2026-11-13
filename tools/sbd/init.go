@@ -226,7 +226,7 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		if p.Confirm("Run a signer? (needs a registered signer key; see below)", slices.Contains(current, "signer")) {
 			profiles = append(profiles, "signer")
 		}
-		if p.Confirm("Serve the API to other machines through the nginx proxy (HTTP, port 80)?", slices.Contains(current, "proxy")) {
+		if p.Confirm("Serve the API to other machines through the proxy (HTTP on port 80; HTTPS is the next question)?", slices.Contains(current, "proxy")) {
 			profiles = append(profiles, "proxy")
 		}
 		if p.Confirm("Run monitoring (Prometheus and Grafana, on this host only)?", slices.Contains(current, "monitoring")) {
@@ -234,6 +234,36 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		}
 	}
 	st.set("COMPOSE_PROFILES", strings.Join(profiles, ","))
+
+	// 3b. The proxy's HTTPS (owner, 2026-11-13): HTTP only unless asked for. A domain gets a Let's Encrypt
+	// certificate, which needs the name to point here and ports 80/443 reachable; none, a self-signed one
+	if slices.Contains(profiles, "proxy") {
+		if v, ok := answers["PROXY_TLS"]; ok {
+			st.set("PROXY_TLS", v)
+			if d, ok := answers["PROXY_DOMAIN"]; ok {
+				st.set("PROXY_DOMAIN", d)
+			}
+		} else if !isDefaults(p) {
+			if p.Confirm("Serve HTTPS too (port 443; HTTP then redirects to it)?", st.get("PROXY_TLS") == "1") {
+				st.set("PROXY_TLS", "1")
+				for attempt := 1; ; attempt++ {
+					d := strings.ToLower(strings.TrimSpace(p.Ask("Domain for a Let's Encrypt certificate (it must point at this host, with ports 80 and 443 reachable from the internet); empty for a self-signed certificate", st.get("PROXY_DOMAIN"))))
+					if d == "" || domainRe.MatchString(d) {
+						st.set("PROXY_DOMAIN", d)
+						break
+					}
+					p.Say("  %q isn't a DNS name like api.example.org", d)
+					if attempt == 3 {
+						p.Say("  leaving PROXY_DOMAIN unchanged")
+						break
+					}
+				}
+			} else if st.get("PROXY_TLS") == "1" {
+				st.set("PROXY_TLS", "0")
+				st.set("PROXY_DOMAIN", "")
+			}
+		}
+	}
 
 	// 4. Signer: only when asked for, with what it implies
 	if slices.Contains(profiles, "signer") {
@@ -519,6 +549,9 @@ func runCommand(c *Ctx, name string, args []string) (int, error) {
 	}
 	return plan.Execute(c.Dir, c.Docker)
 }
+
+// domainRe is the config job's PROXY_DOMAIN check (tools/config).
+var domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 
 // checkP2PAddress is the config job's check (tools/config), so init catches a bad value before start does.
 func checkP2PAddress(a string) error {
