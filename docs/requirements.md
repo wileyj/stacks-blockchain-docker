@@ -38,6 +38,33 @@ but not for a sync from genesis, which needs every block from Stacks genesis (Bi
 a single public peer shared by many Stacks nodes; it often turns connections away, and the node then
 retries (16, 32, 60 s ...), so a first sync from it can take much longer. No RPC credentials are needed.
 
+## Behind NAT
+
+Most nodes run behind a home or office router (NAT), and that is the default here: the node connects out
+to its peers and needs no setup, but nobody can connect in, so it depends entirely on its outbound peers.
+On a mainnet soak (2026-11) such a node fell behind for 4 minutes or more 31 times in a week, 3.6% of the
+time: it missed one tenure and its peers couldn't serve it (stacks-core 4.0.7 fixes a bug that fits this:
+nodes couldn't download tenures larger than about 16 MiB). A miner is the most exposed: a stall during its own tenure means no blocks
+until the tenure changes.
+
+To accept peers from the internet:
+1. The P2P port (`STACKS_CORE_P2P_PORT`, 20444) is already published on every interface.
+2. Forward that TCP port on the router to this host.
+3. Set `STACKS_P2P_ADDRESS` in `.env` to the address peers use, e.g. `STACKS_P2P_ADDRESS=203.0.113.7:20444`
+   (your public IP or a DNS name). Without it the node advertises `0.0.0.0`, which peers can't use.
+4. Restart with a new peer database: the node keeps the address it advertises in it, so a new
+   `STACKS_P2P_ADDRESS` only takes effect once the database is rebuilt. With the stack stopped, move
+   `peer.sqlite*` aside; they're root-owned, under the node's data dir
+   (`persistent-data/<network>/stacks-blockchain/<network>/` by default):
+   ```bash
+   sbd stop
+   sudo sh -c 'cd persistent-data/mainnet/stacks-blockchain/mainnet && for f in peer.sqlite*; do mv "$f" "$f.orig"; done'
+   sbd start
+   ```
+   The node rebuilds the database from its seed node in a few seconds.
+
+Inbound peers then show up under `inbound` in `curl -s localhost:20443/v2/neighbors`.
+
 ## Docker Desktop (macOS, Windows)
 
 Chain data on a bind mount goes through Docker Desktop's file sharing, which is much slower than a

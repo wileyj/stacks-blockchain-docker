@@ -48,6 +48,7 @@ services:
       - PROMETHEUS_APP_SCRAPE_INTERVAL
       ## The proxy profile's nginx config (conf/nginx/proxy.conf); POSTGRES_LOCAL is validated (0 or 1)
       - STACKS_BLOCKCHAIN_API_PORT
+      - STACKS_P2P_ADDRESS
       - POSTGRES_LOCAL
       ## Grafana alerting: the job only checks that a contact point is set; Grafana reads the values
       - MONITORING_ALERTS

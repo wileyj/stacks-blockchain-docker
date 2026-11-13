@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -324,6 +326,36 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		}
 	}
 
+	// 5b. Inbound peers (owner, 2026-11-13): the default is a node behind NAT, which only connects out.
+	// When the P2P port is forwarded (or the host has a public IP), the node has to advertise the address
+	// peers use, or they can't find it (the mainnet soak: no inbound peer until it was set)
+	p2pPort := orDefault(st.get("STACKS_CORE_P2P_PORT"), "20444")
+	if v, ok := answers["STACKS_P2P_ADDRESS"]; ok {
+		st.set("STACKS_P2P_ADDRESS", v)
+	} else if !isDefaults(p) {
+		current := st.get("STACKS_P2P_ADDRESS")
+		if p.Confirm(fmt.Sprintf("Can peers on the internet reach this host on P2P port %s (forwarded on your router, or a public IP)? Behind NAT, the usual case, answer no", p2pPort), current != "") {
+			for attempt := 1; ; attempt++ {
+				a := strings.TrimSpace(p.Ask("The address peers use (your public IP or DNS name, and port)", orDefault(current, "<public-ip>:"+p2pPort)))
+				err := checkP2PAddress(a)
+				if err == nil {
+					st.set("STACKS_P2P_ADDRESS", a)
+					if hasData(dataDir(c, "node")) && a != current {
+						p.Say("  The node advertises it once its peer database is rebuilt: see docs/requirements.md#behind-nat")
+					}
+					break
+				}
+				p.Say("  %v", err)
+				if attempt == 3 {
+					p.Say("  leaving STACKS_P2P_ADDRESS unchanged")
+					break
+				}
+			}
+		} else if current != "" {
+			st.set("STACKS_P2P_ADDRESS", "")
+		}
+	}
+
 	// 6. Data location
 	root := st.answer(p, "DATA_ROOT", "Where to keep the data (chainstate, API database, signer)", orDefault(st.get("DATA_ROOT"), "./persistent-data"))
 	if root != orDefault(st.get("DATA_ROOT"), "./persistent-data") {
@@ -486,6 +518,19 @@ func runCommand(c *Ctx, name string, args []string) (int, error) {
 		}
 	}
 	return plan.Execute(c.Dir, c.Docker)
+}
+
+// checkP2PAddress is the config job's check (tools/config), so init catches a bad value before start does.
+func checkP2PAddress(a string) error {
+	host, port, err := net.SplitHostPort(a)
+	p, perr := strconv.ParseUint(port, 10, 16)
+	if err != nil || perr != nil || p == 0 || host == "" || strings.ContainsAny(host, "/<>") {
+		return fmt.Errorf("STACKS_P2P_ADDRESS must be host:port, e.g. 203.0.113.7:%s, got %q", orDefault(port, "20444"), a)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return fmt.Errorf("peers can't reach %s: use this host's public address", host)
+	}
+	return nil
 }
 
 func orDefault(v, def string) string {

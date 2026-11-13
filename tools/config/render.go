@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"sort"
 	"strconv"
@@ -40,6 +41,9 @@ type Settings struct {
 	Alerts, AlertWebhook, AlertEmail bool
 	// The proxy profile: the API's port inside the network
 	APIPort string
+	// P2PAddress is the address peers reach this node on (host:port). Empty, the default, is a node
+	// behind NAT: it connects out to peers and accepts none from the internet (owner, 2026-11-13)
+	P2PAddress string
 }
 
 var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
@@ -90,6 +94,10 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
 	}
 	s.APIPort = orDefault(getenv("STACKS_BLOCKCHAIN_API_PORT"), "3999")
+	s.P2PAddress = strings.TrimSpace(getenv("STACKS_P2P_ADDRESS"))
+	if err := checkP2PAddress(s.P2PAddress); err != nil {
+		return s, err
+	}
 	if v := orDefault(getenv("POSTGRES_LOCAL"), "0"); v != "0" && v != "1" {
 		return s, fmt.Errorf("POSTGRES_LOCAL must be 0 or 1, got %q", v)
 	}
@@ -131,6 +139,22 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		}
 	}
 	return s, nil
+}
+
+// checkP2PAddress accepts host:port with a real host, which is what the node advertises to peers.
+func checkP2PAddress(a string) error {
+	if a == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(a)
+	p, perr := strconv.ParseUint(port, 10, 16)
+	if err != nil || perr != nil || p == 0 || host == "" || strings.Contains(host, "/") {
+		return fmt.Errorf("STACKS_P2P_ADDRESS must be host:port, e.g. 203.0.113.7:20444 or node.example.com:20444, got %q", a)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return fmt.Errorf("STACKS_P2P_ADDRESS=%q: peers can't reach %s; use this node's public address, or leave it empty behind NAT", a, host)
+	}
+	return nil
 }
 
 // Observers returns the [[events_observer]] entries for the enabled profiles, so the node never
@@ -177,6 +201,7 @@ func RenderNode(tmpl, overrides []byte, s Settings, source string) ([]byte, erro
 		node["prometheus_bind"] = "0.0.0.0:" + s.NodeMetricsPort
 	}
 	node["stacker"] = s.Profiles["signer"]
+	setString(node, "p2p_address", s.P2PAddress)
 	delete(m, "events_observer")
 	if obs := s.Observers(); len(obs) > 0 {
 		m["events_observer"] = obs

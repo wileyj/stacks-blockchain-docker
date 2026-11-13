@@ -181,6 +181,26 @@ func TestSigner(t *testing.T) {
 	}
 }
 
+func TestP2PAddress(t *testing.T) {
+	kv := baseEnv("mainnet", "node,api")
+	// Behind NAT, the default: the template's value (none) stays
+	if _, ok := renderNode(t, kv, "")["node"].(map[string]any)["p2p_address"]; ok {
+		t.Errorf("p2p_address set without STACKS_P2P_ADDRESS")
+	}
+	for _, a := range []string{"203.0.113.7:20444", "node.example.com:30444", "[2001:db8::7]:20444"} {
+		kv["STACKS_P2P_ADDRESS"] = " " + a + " "
+		if got := renderNode(t, kv, "")["node"].(map[string]any)["p2p_address"]; got != a {
+			t.Errorf("%s rendered as %v", a, got)
+		}
+	}
+	for _, bad := range []string{"203.0.113.7", "http://203.0.113.7:20444", "0.0.0.0:20444", "[::]:20444", ":20444", "203.0.113.7:0", "203.0.113.7:70000"} {
+		kv["STACKS_P2P_ADDRESS"] = bad
+		if _, err := SettingsFromEnv(env(kv)); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
 func TestSettingsErrors(t *testing.T) {
 	for name, kv := range map[string]map[string]string{
 		"no .env":         {},
