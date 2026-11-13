@@ -154,6 +154,7 @@ Key mechanical changes that make most of the defects go away:
 | TODO-1 | **Run the stacks-node container as non-root.** Change the image or compose setup so the node runs as non-root by default. Also check the API and signer images. | 2026-10-26 (owner) | [15](./15-verification-log.md#non-root-stacks-node-2026-10-26-v) |
 
 TODO-1 details:
+- **Decided (owner, 2026-11-13): upstream first.** The fix goes to stacks-core as a PR (a `USER` and a neutral data dir in its images). Once the published images no longer need root, this repo moves the mounts and `working_dir` off `/root` and adds whatever ownership migration is needed. Nothing changes here until then. As of 4.0.7 the node and signer images still have no `USER`.
 - **Current state [V]:** `stacks-core:4.0.4` has no `USER`, so it runs as uid 0, and `/root` is mode `0700`. The repo puts the node's data at `/root/stacks-blockchain/data`, so a non-root user can't reach it.
 - **What already works [V]:** uid 1000 with `working_dir = "/data"` and a volume owned by uid 1000 boots, syncs headers and serves RPC and metrics. All files are created as 1000:1000. Nothing in the node itself needs root, and every port is above 1024.
 - **Needed changes:**
