@@ -7,6 +7,11 @@ Compose and with `sbd`.
 ## Patch and minor versions
 
 Change the versions in `.env`, then pull and restart. The node and the API migrate their data on start.
+Some of these migrations are one-way, so going back to an older version needs data from before the
+upgrade (a backup, or `sbd seed`). For example, stacks-core 4.0.6 and later move the chainstate to a
+newer format that older releases can't open, and API 9.8.0 and 9.9.0 each take 5–15 minutes to migrate
+the database on their first start. Upgrade the node and the signer together: the 4.0.6+ signer relies on
+an endpoint only 4.0.6+ nodes have.
 
 ```bash
 docker compose pull --ignore-buildable
