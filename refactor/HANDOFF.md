@@ -266,7 +266,7 @@ Designed with the owner one decision at a time (13 T6–T8, T4 revised) and buil
 **Follow-ups:**
 - **Go toolchain: done (owner, 2026-11-09).** Go 1.25 left upstream support with Go 1.27, so the three modules (`go 1.27.0`), their Dockerfiles, CI and the release workflow moved to Go 1.27 (1.27.3 at the time). All three images build (the seed image runs its tests in the build), and sbd/config vet and tests, compose-config (29/29), check-config and the harness (48/48, as before) pass.
 - **`sbd update <node|api|signer|proxy> [--version V]`: done 2026-11-13 (owner: command line, not the dashboard).** Recreates one service with its pinned (or a new) image while the rest runs: pull, `config`, `up -d --no-deps --force-recreate`. Refuses a stopped service and a signer newer than the node; postgres stays `sbd db upgrade`. Tested on a scratch testnet stack (2026-11-14) with moved ports (RPC 21443, P2P 21444, API 13999): only the API container was replaced and the node's kept running; under load (node and API at 193), the API answered again 4 s after `sbd update api`, level with the node, and kept indexing (308). The same test found the config job ignoring `STACKS_CORE_RPC_PORT`/`STACKS_CORE_P2P_PORT` for the node's binds (fixed in `f7ba94d`: the node's RPC then answered on 21443 and the API reached it).
-- **Signer panel: done 2026-11-13 (T10).** Tested with the owner's dry-run signer's real `/metrics` (`tools/sbd/testdata/signer-metrics.txt`). Dropped: alerts panel (PROBLEMS covers it), replay status. Still parked: Prometheus history, per-service restart, remote access, mouse.
+- **Signer panel: done 2026-11-13 (T10).** Tested with the owner's dry-run signer's real `/metrics` (`tools/sbd/testdata/signer-metrics.txt`). Dropped: alerts panel (PROBLEMS covers it), replay status. Per-service restart became `sbd update`. **Dropped (owner, 2026-11-14): Prometheus history, remote access, mouse: not needed.**
 
 ## Phase 5: soak (started 2026-11-03, in progress)
 
@@ -350,3 +350,8 @@ Local by default; exposing a service is an explicit opt-in in `.env`. No host ne
 ## Phase 7: `manage.sh` removed (2026-11-13)
 
 Owner: now, not after a release ("it's a small set of users"). Removed `manage.sh` and `refactor/harness/` (it only characterised `manage.sh`); CI drops the harness job and `manage.sh` from shellcheck. `scripts/seed-chainstate.sh` stays as a wrapper around the seed job (owner); `scripts/postgres-initdb.sh` and `scripts/setup-bns.sh` stay (compose uses them). `VERBOSE` is gone from `sample.env`. Docs: README and usage (a "From `manage.sh`" command map), requirements, config; upgrade and `sbd migrate` now say how to stop an old-layout stack without it (`docker stop -t 1200 stacks-blockchain`, then `docker compose -p compose-files down`). **Done 2026-11-14:** PR #9 merged (`c418996`, all four checks green); the owner updated the ruleset by hand (my change to it was blocked by the permission settings). The ruleset now requires exactly the four checks CI runs: `shellcheck + compose config`, `check-config on rendered configs`, `compose-only boot (testnet node,api)`, `compose-only boot (mainnet node,api)` (verified 2026-11-14).
+
+## Next (owner, 2026-11-14)
+
+1. Run A step 3 (core 4.0.7, since 2026-11-14 00:59 UTC): compare its stalls with the 4.0.4 periods after a day or two, then stop Run A and free its data (about 1.2 TB on the LV) and the stall tracker.
+2. Then a follow-up PR from `chore/refactor` (HANDOFF and docs commits since #9, plus Run A's results), and a release (`v0.1.0-rc3` or `v0.1.0`).
