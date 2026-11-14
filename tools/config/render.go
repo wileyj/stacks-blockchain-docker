@@ -32,6 +32,7 @@ type Settings struct {
 	APIObserverTimeoutMS string
 	CoreRPCHost          string
 	CoreRPCPort          string
+	CoreP2PPort          string
 	SignerKey            string
 	// ContainerMetrics: cAdvisor runs with the monitoring profile (MONITORING_CONTAINER_METRICS=1)
 	ContainerMetrics bool
@@ -93,6 +94,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	s.SignerMetricsPort = getenv("SIGNER_METRICS_PORT")
 	s.CoreRPCHost = orDefault(getenv("STACKS_CORE_RPC_HOST"), "stacks-blockchain")
 	s.CoreRPCPort = orDefault(getenv("STACKS_CORE_RPC_PORT"), "20443")
+	s.CoreP2PPort = orDefault(getenv("STACKS_CORE_P2P_PORT"), "20444")
 	s.APIEventEndpoint = orDefault(getenv("API_EVENT_ENDPOINT"),
 		"stacks-blockchain-api:"+orDefault(getenv("STACKS_CORE_EVENT_PORT"), "3700"))
 	s.APIObserverTimeoutMS = orDefault(getenv("API_OBSERVER_TIMEOUT_MS"), "60000")
@@ -139,7 +141,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	for name, v := range map[string]string{
 		btc + "RPC_PORT": s.BTCRPCPort, btc + "P2P_PORT": s.BTCP2PPort, "NODE_METRICS_PORT": s.NodeMetricsPort,
 		"STACKS_SIGNER_PORT": s.SignerPort, "SIGNER_METRICS_PORT": s.SignerMetricsPort,
-		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
+		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "STACKS_CORE_P2P_PORT": s.CoreP2PPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
 		"STACKS_BLOCKCHAIN_API_PORT": s.APIPort,
 	} {
 		if v != "" {
@@ -211,6 +213,9 @@ func RenderNode(tmpl, overrides []byte, s Settings, source string) ([]byte, erro
 		node["prometheus_bind"] = "0.0.0.0:" + s.NodeMetricsPort
 	}
 	node["stacker"] = s.Profiles["signer"]
+	// compose publishes these ports and the API and signer call the RPC port: the node must listen on them
+	node["rpc_bind"] = "0.0.0.0:" + s.CoreRPCPort
+	node["p2p_bind"] = "0.0.0.0:" + s.CoreP2PPort
 	setString(node, "p2p_address", s.P2PAddress)
 	delete(m, "events_observer")
 	if obs := s.Observers(); len(obs) > 0 {

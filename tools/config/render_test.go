@@ -179,6 +179,25 @@ func TestSigner(t *testing.T) {
 	}
 }
 
+// The node listens on the ports compose publishes and the API and signer call (found 2026-11-13: a
+// changed STACKS_CORE_RPC_PORT left the node on 20443 and the API unable to reach it)
+func TestNodePortsFollowEnv(t *testing.T) {
+	kv := baseEnv("testnet", "node,api")
+	node := renderNode(t, kv, "")["node"].(map[string]any)
+	if node["rpc_bind"] != "0.0.0.0:20443" || node["p2p_bind"] != "0.0.0.0:20444" {
+		t.Errorf("defaults: %v %v", node["rpc_bind"], node["p2p_bind"])
+	}
+	kv["STACKS_CORE_RPC_PORT"], kv["STACKS_CORE_P2P_PORT"] = "21443", "21444"
+	node = renderNode(t, kv, "")["node"].(map[string]any)
+	if node["rpc_bind"] != "0.0.0.0:21443" || node["p2p_bind"] != "0.0.0.0:21444" {
+		t.Errorf("changed ports: %v %v", node["rpc_bind"], node["p2p_bind"])
+	}
+	kv["STACKS_CORE_P2P_PORT"] = "2o444"
+	if _, err := SettingsFromEnv(env(kv)); err == nil {
+		t.Error("a bad P2P port is accepted")
+	}
+}
+
 func TestP2PAddress(t *testing.T) {
 	kv := baseEnv("mainnet", "node,api")
 	// Behind NAT, the default: the template's value (none) stays
