@@ -3,7 +3,7 @@
 ##   docker compose up -d        # starts the profiles listed in COMPOSE_PROFILES (default: node,api)
 ##   docker compose --profile '*' down   # graceful stop of everything (node first, up to STACKS_SHUTDOWN_TIMEOUT)
 ##
-## Profiles: node (stacks-node), api (API + postgres), signer, proxy (nginx).
+## Profiles: node (stacks-node), api (API + postgres), signer, proxy (Caddy), monitoring.
 ## The one-shot `config` job renders conf/${NETWORK}/Config.toml (and Signer.toml) on every `up`;
 ## put your own TOML changes in conf/${NETWORK}/Config.overrides.toml / Signer.overrides.toml.
 ## Data lives under DATA_ROOT (default ./persistent-data/<network>/...); each component's path can be
@@ -41,13 +41,18 @@ services:
       - TESTNET_SIGNER_PRIVATE_KEY
       - STACKS_CORE_RPC_HOST
       - STACKS_CORE_RPC_PORT
+      - STACKS_CORE_P2P_PORT
       - STACKS_CORE_EVENT_PORT
       - API_EVENT_ENDPOINT
       - API_OBSERVER_TIMEOUT_MS
       - MONITORING_CONTAINER_METRICS
       - PROMETHEUS_APP_SCRAPE_INTERVAL
-      ## The proxy profile's nginx config (conf/nginx/proxy.conf); POSTGRES_LOCAL is validated (0 or 1)
+      ## The proxy profile's Caddyfile (conf/proxy/Caddyfile); POSTGRES_LOCAL is validated (0 or 1)
       - STACKS_BLOCKCHAIN_API_PORT
+      - PROXY_TLS
+      - PROXY_DOMAIN
+      - PROXY_ACME_EMAIL
+      - STACKS_P2P_ADDRESS
       - POSTGRES_LOCAL
       ## Grafana alerting: the job only checks that a contact point is set; Grafana reads the values
       - MONITORING_ALERTS
@@ -225,20 +230,25 @@ services:
       signer-config-check:
         condition: service_completed_successfully
 
-  ## The way to serve the API to other machines: HTTP on PROXY_BIND_ADDR (default all interfaces).
-  ## HTTPS is terminated in front of it for now (a CDN proxy, a load balancer); the config job renders
-  ## conf/nginx/proxy.conf
-  nginx:
-    image: nginx:${NGINX_VERSION:-1.30.5-alpine}
-    container_name: nginx
+  ## The way to serve the API to other machines, on PROXY_BIND_ADDR (default all interfaces): Caddy, with
+  ## conf/proxy/Caddyfile from the config job. HTTP only by default; PROXY_TLS=1 adds HTTPS on 443 with a
+  ## Let's Encrypt certificate for PROXY_DOMAIN (or a self-signed one without it), and 80 then redirects.
+  ## Certificates are kept in the proxy-data volume, so restarts don't request new ones
+  proxy:
+    image: caddy:${CADDY_VERSION:-2.11.9-alpine}
+    container_name: proxy
     restart: on-failure
     profiles: [proxy]
     ports:
-      - ${PROXY_BIND_ADDR:-0.0.0.0}:${NGINX_PROXY_PORT:-80}:80
+      - ${PROXY_BIND_ADDR:-0.0.0.0}:${PROXY_HTTP_PORT:-80}:80
+      - ${PROXY_BIND_ADDR:-0.0.0.0}:${PROXY_HTTPS_PORT:-443}:443
     volumes:
-      - ./conf/nginx/proxy.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./conf/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy-data:/data
+      - proxy-config:/config
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/status"]
+      ## Caddy's admin endpoint (inside the container only): up in every mode, unlike port 80, which redirects with TLS
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -537,6 +547,8 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  proxy-data:
+  proxy-config:
 
 networks:
   default:

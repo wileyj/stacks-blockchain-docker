@@ -25,14 +25,16 @@ groups:
           summary: "{{ $labels.job }} metrics unreachable"
           description: "Prometheus can't scrape {{ $labels.instance }} ({{ $labels.job }}). On a fresh node this is normal during the initial Bitcoin header sync."
 
-      ## Gated on outbound peers: right after RPC comes up the node has none for a few minutes (refactor/15 P1)
+      ## Gated on outbound peers: right after RPC comes up the node has none for a few minutes (refactor/15 P1).
+      ## 10 min (owner, 2026-11-13): Nakamoto blocks come every few seconds and a tenure change pauses the whole
+      ## network for about 5 min; the mainnet soak's node-side stalls were 4-25 min, which 30 min caught once in 31
       - alert: StacksTipStalled
-        expr: changes(stacks_node_stacks_tip_height[30m]) == 0 and stacks_node_neighbors_outbound > 0
+        expr: changes(stacks_node_stacks_tip_height[5m]) == 0 and stacks_node_neighbors_outbound > 0
         for: 5m
         labels: {severity: critical}
         annotations:
-          summary: "Stacks tip hasn't advanced for 35 minutes"
-          description: "No new Stacks block in 35 minutes although the node has peers. A blocked event observer (API or signer down) stalls the node (refactor/09 D46/D55)."
+          summary: "Stacks tip hasn't advanced for 10 minutes"
+          description: "No new Stacks block in 10 minutes although the node has peers. Either the node can't get a block it is missing from its peers, or a blocked event observer (API or signer down) is stalling it (refactor/09 D46/D55)."
 
       ## Bitcoin blocks come every 10 min on average but gaps of 60-90 min are routine (the mainnet soak saw
       ## 92 min within 2 days), and 2 h+ a few times a year, hence 2 h plus 30 min. A node that is still

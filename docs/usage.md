@@ -21,6 +21,7 @@ both: neither keeps state the other doesn't see.
 | One service's logs | `docker compose logs -f --tail 100 <service>` | `sbd logs <service>` |
 | Export every container's log | `docker compose --profile '*' logs --no-color --timestamps <service> > exported-logs/<container>.log` | `sbd logs export` |
 | Pull the images pinned in `.env` | `docker compose pull --ignore-buildable` | `sbd pull` |
+| Update one service, the others keep running (see [Upgrades](./upgrade.md#one-service)) | set its version in `.env`, then `docker compose pull <service>`, `docker compose run --rm config`, `docker compose up -d --no-deps --force-recreate <service>` | `sbd update <node\|api\|signer\|proxy> [--version V]` |
 | Render `Config.toml`/`Signer.toml` (`up` does it too) | `docker compose run --rm config` | `sbd config render` |
 | Seed from the Hiro archive (stopped stack) | `docker compose run --rm seed` | `sbd seed [seed options]` |
 | Delete this network's data (stopped stack) | `docker compose run --rm reset --yes` (without `--yes`, it asks on a terminal) | `sbd reset [--yes]` |
@@ -28,6 +29,7 @@ both: neither keeps state the other doesn't see.
 | Upgrade the API database after raising `POSTGRES_VERSION` (stopped stack) | `docker compose run --rm pg-upgrade` (`--dry-run`, `--mode auto\|clone\|copy\|link`) | `sbd db upgrade` |
 | Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
 | Preflight checks | — | `sbd doctor` |
+| Live dashboard | `docker compose --profile '*' ps`, `docker stats`, `docker compose logs -f` | `sbd ui` (see [Dashboard](#dashboard)) |
 | Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
@@ -45,8 +47,8 @@ Getting `sbd`:
   socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:
   `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
   (provenance: `gh attestation verify oci://ghcr.io/<owner>/sbd:<version> --repo <owner>/stacks-blockchain-docker`)
-- **From source** with Go 1.25, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
-  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.25 go build -o sbd .`.
+- **From source** with Go 1.27, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
+  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.27 go build -o sbd .`.
 
 ## Services
 
@@ -57,7 +59,7 @@ Getting `sbd`:
 | `node` | stacks-node | |
 | `api` | Stacks Blockchain API and postgres | The node delivers events to the API, so a configured API is a liveness dependency of the node |
 | `signer` | stacks-signer | Needs `SIGNER_PRIVATE_KEY` (testnet: `TESTNET_SIGNER_PRIVATE_KEY`) |
-| `proxy` | nginx on port 80, on all interfaces | **The way to serve the API to other machines** (see below) |
+| `proxy` | Caddy on port 80 (and 443 with `PROXY_TLS=1`), on all interfaces | **The way to serve the API to other machines** (see below) |
 | `monitoring` | Prometheus, Grafana, exporters on 127.0.0.1 | Set `GRAFANA_ADMIN_PASSWORD` first; see [Monitoring](./monitoring.md) |
 
 `node` and `api` always run; `signer`, `proxy` and `monitoring` are optional. After removing a profile, stop
@@ -72,11 +74,45 @@ work on the host itself, and other machines are refused.
 
 | To | Do |
 |---|---|
-| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): nginx on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
-| ... over HTTPS | terminate TLS in front of the proxy: a CDN proxy (e.g. Cloudflare), a load balancer or your own reverse proxy, forwarding to port 80 |
+| Serve the API to other machines | add `proxy` to `COMPOSE_PROFILES` (`sbd start --with proxy`): Caddy on port 80 (`PROXY_BIND_ADDR`, default all interfaces). The API also answers the node's `/v2/*` routes, so those come along |
+| ... over HTTPS | `PROXY_TLS=1`: HTTPS on 443, and HTTP redirects to it. With `PROXY_DOMAIN=api.example.org`, Caddy gets and renews a Let's Encrypt certificate: the name must point at this host, and ports 80 and 443 be reachable from the internet (forward them behind NAT). Without a domain, a self-signed certificate (clients must accept it, e.g. `curl -k`). Or keep HTTP and terminate TLS in front (a CDN proxy, a load balancer) |
 | Reach the database from tools on this host | `POSTGRES_LOCAL=1`: published on `127.0.0.1:5432` (`POSTGRES_LOCAL_PORT`). It can't be published beyond this host: the API is its only client. Ad hoc: `docker compose exec postgres psql -U postgres` |
 | Publish the API or RPC port directly | `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0` (`sbd doctor` flags it) |
 | See metrics, Prometheus or Grafana from elsewhere | an SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 <host>`: they're never published beyond this host |
+
+## Dashboard
+
+`sbd ui` shows the stack live in the terminal, and works the same on a stack started with plain
+`docker compose up -d`:
+- **Services:** state and health, uptime, CPU, memory, disk read/write per second, restarts.
+- **Chain:** the node's tip and burn height, whether it's synced, the API's tip and lag, peers.
+- **Host:** free space under the data dirs, load, memory, and the last hour of node CPU and tip height.
+- **PoX:** the stacking cycle and phase, when the next cycle starts, STX stacked, and how many
+  signatures the latest block carries out of the cycle's signers (a count, not signing weight: blocks
+  need 70% of the weight, and the API doesn't say who signed).
+- **Signer** (with the signer profile): the node height and reward cycle the signer sees, the blocks it
+  accepted and rejected, the last 10 minutes of them, and its average response time, from its own
+  `/metrics`. Whether it is registered in the cycle's signer set isn't shown.
+- **Problems** (last, so it can grow into the free rows): what needs a look, judged from state, not log messages: a container down, unhealthy
+  or just restarted, the node or API not answering, no new block for 5 minutes, the API more than 15
+  blocks behind the node (it isn't receiving blocks), no Bitcoin block for 2 hours, no peers; with a
+  signer, its metrics not answering, more than 5 blocks behind the node, more than half of its recent
+  responses rejections, or proposals with no responses.
+- **Logs:** `l` opens a full-screen log of one service (`l` for the next, `w` for warnings and errors
+  only, Esc to go back). Logs aren't on the main screen: the node and API log constantly, mostly noise.
+
+"Synced" means the latest block the API has is under 5 minutes old (Stacks blocks come every few
+seconds). Set `SBD_UI_REFERENCE_API` (e.g. `https://api.hiro.so`) to compare with a public tip instead,
+where being within 15 blocks counts as synced; without it the dashboard makes no outbound calls.
+
+Keys `s`, `x`, `r`, `p` and `e` run `sbd start`, `stop`, `restart`, `pull` and `logs export` in the
+terminal, showing their output; stop and restart ask first. Everything that deletes or replaces data,
+or changes settings (`seed`, `reset`, `db upgrade`, `env set` ...), stays in the shell. `q` quits the
+dashboard and leaves the stack running.
+
+Run it on the node's host: it reads the node and the API on their local ports (or, when those aren't
+published, at their container addresses on Linux), and its disk and memory figures are this host's. It
+needs a terminal; scripts can use `sbd status --json`.
 
 ## Stopping
 
@@ -124,7 +160,8 @@ A deferred index builds with `CREATE INDEX CONCURRENTLY` while the stack runs (a
 mainnet NFT index). Until it's done, don't run `VACUUM` or `ANALYZE` on its table (`nft_events`): the
 two deadlock, postgres cancels the build, and `build-indexes` starts it over from the beginning.
 
-With `sbd`, the same options follow `sbd seed`, for example `sbd seed --dry-run`.
+With `sbd`, the same options follow `sbd seed`, for example `sbd seed --dry-run`. `scripts/seed-chainstate.sh`
+still works too: it runs the same job (`-y` is `--yes`), with no root or host tools needed any more.
 
 ## Upgrade the API database to a new PostgreSQL major
 
@@ -156,11 +193,10 @@ legacy BNS v1 data from `./persistent-data/bns-data` while it syncs. A seeded no
 docker compose run --rm bns     # sbd: sbd bns
 ```
 
-## `./manage.sh` (deprecated)
+## From `manage.sh`
 
-`./manage.sh` still works the way it did, wrapping the same `compose.yaml`, and prints a deprecation
-notice on stderr. It will be removed in a later release. Its flags apply to one run only, while
-`COMPOSE_PROFILES` and `sbd start --with` persist the choice in `.env`.
+`./manage.sh` was removed (2026-11). Its flags applied to one run only, while `COMPOSE_PROFILES` and
+`sbd start --with` keep the choice in `.env`. Its commands map to:
 
 | `./manage.sh` | Plain Docker Compose | `sbd` |
 |---|---|---|
@@ -173,6 +209,6 @@ notice on stderr. It will be removed in a later release. Its flags apply to one 
 | `bns` | `docker compose run --rm bns` | `sbd bns` |
 | `status` | `docker compose ps` | `sbd status` |
 
-A stack started from the old `compose-files/` layout is stopped by `./manage.sh -n <network> -a stop`;
-see [Upgrading](./upgrade.md#an-install-from-before-the-compose-layout) for moving such an install over.
-API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead.
+A stack still running from the old `compose-files/` layout: see
+[Upgrading](./upgrade.md#an-install-from-before-the-compose-layout). API event replay (`-a export` /
+`-a import`) was removed too: resync from a Hiro archive snapshot instead.

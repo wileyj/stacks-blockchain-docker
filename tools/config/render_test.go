@@ -65,10 +65,8 @@ func TestObserversFollowProfiles(t *testing.T) {
 		want     []string
 		stacker  bool
 	}{
-		{"node", nil, false},
 		{"node,api", []string{"stacks-blockchain-api:3700"}, false},
 		{"node,api,signer", []string{"stacks-blockchain-api:3700", "stacks-signer:30000"}, true},
-		{"node,signer", []string{"stacks-signer:30000"}, true},
 		{" Node , API ", []string{"stacks-blockchain-api:3700"}, false},
 		{"*", []string{"stacks-blockchain-api:3700", "stacks-signer:30000"}, true},
 	} {
@@ -99,7 +97,7 @@ func TestDeploymentKeys(t *testing.T) {
 	}
 
 	// testnet uses TBTC_* and keeps the template's network definition
-	m = renderNode(t, baseEnv("testnet", "node"), "")
+	m = renderNode(t, baseEnv("testnet", "node,api"), "")
 	burn = m["burnchain"].(map[string]any)
 	if burn["peer_host"] != "tbtc.example" || burn["mode"] != "krypton" {
 		t.Errorf("testnet burnchain: %v", burn)
@@ -113,7 +111,7 @@ func TestDeploymentKeys(t *testing.T) {
 }
 
 func TestFollowerWithoutRPCCredentials(t *testing.T) {
-	kv := baseEnv("mainnet", "node")
+	kv := baseEnv("mainnet", "node,api")
 	kv["BTC_RPC_USER"], kv["BTC_RPC_PASS"] = "", ""
 	burn := renderNode(t, kv, "")["burnchain"].(map[string]any)
 	if _, ok := burn["username"]; ok {
@@ -125,7 +123,7 @@ func TestFollowerWithoutRPCCredentials(t *testing.T) {
 }
 
 func TestValuesAreEscaped(t *testing.T) {
-	kv := baseEnv("mainnet", "node")
+	kv := baseEnv("mainnet", "node,api")
 	kv["AUTH_TOKEN"] = `a"b'c\d` + "\nx"
 	m := renderNode(t, kv, "")
 	if got := m["connection_options"].(map[string]any)["auth_token"]; got != kv["AUTH_TOKEN"] {
@@ -159,7 +157,7 @@ events_keys = ["*"]
 }
 
 func TestSigner(t *testing.T) {
-	kv := baseEnv("testnet", "node,signer")
+	kv := baseEnv("testnet", "node,api,signer")
 	s, _ := SettingsFromEnv(env(kv))
 	tmpl, _ := os.ReadFile(filepath.Join(repoConf, "testnet", "Signer.toml.sample"))
 	out, err := RenderSigner(tmpl, nil, s, "Signer.toml.sample")
@@ -181,9 +179,51 @@ func TestSigner(t *testing.T) {
 	}
 }
 
+// The node listens on the ports compose publishes and the API and signer call (found 2026-11-13: a
+// changed STACKS_CORE_RPC_PORT left the node on 20443 and the API unable to reach it)
+func TestNodePortsFollowEnv(t *testing.T) {
+	kv := baseEnv("testnet", "node,api")
+	node := renderNode(t, kv, "")["node"].(map[string]any)
+	if node["rpc_bind"] != "0.0.0.0:20443" || node["p2p_bind"] != "0.0.0.0:20444" {
+		t.Errorf("defaults: %v %v", node["rpc_bind"], node["p2p_bind"])
+	}
+	kv["STACKS_CORE_RPC_PORT"], kv["STACKS_CORE_P2P_PORT"] = "21443", "21444"
+	node = renderNode(t, kv, "")["node"].(map[string]any)
+	if node["rpc_bind"] != "0.0.0.0:21443" || node["p2p_bind"] != "0.0.0.0:21444" {
+		t.Errorf("changed ports: %v %v", node["rpc_bind"], node["p2p_bind"])
+	}
+	kv["STACKS_CORE_P2P_PORT"] = "2o444"
+	if _, err := SettingsFromEnv(env(kv)); err == nil {
+		t.Error("a bad P2P port is accepted")
+	}
+}
+
+func TestP2PAddress(t *testing.T) {
+	kv := baseEnv("mainnet", "node,api")
+	// Behind NAT, the default: the template's value (none) stays
+	if _, ok := renderNode(t, kv, "")["node"].(map[string]any)["p2p_address"]; ok {
+		t.Errorf("p2p_address set without STACKS_P2P_ADDRESS")
+	}
+	for _, a := range []string{"203.0.113.7:20444", "node.example.com:30444", "[2001:db8::7]:20444"} {
+		kv["STACKS_P2P_ADDRESS"] = " " + a + " "
+		if got := renderNode(t, kv, "")["node"].(map[string]any)["p2p_address"]; got != a {
+			t.Errorf("%s rendered as %v", a, got)
+		}
+	}
+	for _, bad := range []string{"203.0.113.7", "http://203.0.113.7:20444", "0.0.0.0:20444", "[::]:20444", ":20444", "203.0.113.7:0", "203.0.113.7:70000"} {
+		kv["STACKS_P2P_ADDRESS"] = bad
+		if _, err := SettingsFromEnv(env(kv)); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
 func TestSettingsErrors(t *testing.T) {
 	for name, kv := range map[string]map[string]string{
 		"no .env":         {},
+		"node only":       {"NETWORK": "mainnet", "COMPOSE_PROFILES": "node"},
+		"api only":        {"NETWORK": "mainnet", "COMPOSE_PROFILES": "api,monitoring"},
+		"no profiles":     {"NETWORK": "mainnet"},
 		"mocknet":         {"NETWORK": "mocknet"},
 		"bad port":        {"NETWORK": "mainnet", "BTC_RPC_PORT": "83a2"},
 		"bad timeout":     {"NETWORK": "mainnet", "API_OBSERVER_TIMEOUT_MS": "1m"},
@@ -235,7 +275,7 @@ func TestRunSignerFileMode(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(repoConf, "mainnet", f))
 		os.WriteFile(filepath.Join(dir, f), b, 0o644)
 	}
-	if err := run(root, env(baseEnv("mainnet", "node,signer"))); err != nil {
+	if err := run(root, env(baseEnv("mainnet", "node,api,signer"))); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(filepath.Join(dir, "Signer.toml"))

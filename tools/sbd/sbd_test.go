@@ -24,6 +24,7 @@ type fakeDocker struct {
 	version string
 	config  string // docker compose config --format json output
 	info    string // docker info --format '{{json .}}' output
+	inspect string // docker inspect output (any containers)
 	exit    int
 	ran     []string
 }
@@ -46,6 +47,9 @@ func (f *fakeDocker) Output(args []string) ([]byte, error) {
 		return []byte(`{"ServerVersion":"28.0.0","OperatingSystem":"Debian","Architecture":"x86_64","MemTotal":68719476736,"NCPU":20}`), nil
 	case "compose --profile * config --format json":
 		return []byte(f.config), nil
+	}
+	if args[0] == "inspect" {
+		return []byte(f.inspect), nil
 	}
 	return nil, nil
 }
@@ -298,11 +302,12 @@ func TestPlansAreDocumented(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "conf", "mainnet", "Config.toml"), []byte("[node]\n"), 0o644)
 	placeholders := strings.NewReplacer(
 		"--timestamps stacks-blockchain > exported-logs/stacks-blockchain.log", "--timestamps <service> > exported-logs/<container>.log",
-		"--tail 100 stacks-blockchain", "--tail 100 <service>")
+		"--tail 100 stacks-blockchain", "--tail 100 <service>",
+		"pull stacks-blockchain-api", "pull <service>", "--force-recreate stacks-blockchain-api", "--force-recreate <service>")
 	seen := map[string]bool{}
 	for _, args := range [][]string{
 		{"start"}, {"stop"}, {"logs"}, {"logs", "stacks-blockchain"}, {"logs", "export"},
-		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"db", "upgrade"}, {"config", "render"}, {"migrate"},
+		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"db", "upgrade"}, {"config", "render"}, {"migrate"}, {"update", "api"},
 	} {
 		_, out, _ := sbd(t, dir, &fakeDocker{ps: strings.SplitN(runningPS, "\n", 2)[0]}, append([]string{"plan"}, args...)...)
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {

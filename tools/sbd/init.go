@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -224,7 +226,7 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		if p.Confirm("Run a signer? (needs a registered signer key; see below)", slices.Contains(current, "signer")) {
 			profiles = append(profiles, "signer")
 		}
-		if p.Confirm("Serve the API to other machines through the nginx proxy (HTTP, port 80)?", slices.Contains(current, "proxy")) {
+		if p.Confirm("Serve the API to other machines through the proxy (HTTP on port 80; HTTPS is the next question)?", slices.Contains(current, "proxy")) {
 			profiles = append(profiles, "proxy")
 		}
 		if p.Confirm("Run monitoring (Prometheus and Grafana, on this host only)?", slices.Contains(current, "monitoring")) {
@@ -232,6 +234,36 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		}
 	}
 	st.set("COMPOSE_PROFILES", strings.Join(profiles, ","))
+
+	// 3b. The proxy's HTTPS (owner, 2026-11-13): HTTP only unless asked for. A domain gets a Let's Encrypt
+	// certificate, which needs the name to point here and ports 80/443 reachable; none, a self-signed one
+	if slices.Contains(profiles, "proxy") {
+		if v, ok := answers["PROXY_TLS"]; ok {
+			st.set("PROXY_TLS", v)
+			if d, ok := answers["PROXY_DOMAIN"]; ok {
+				st.set("PROXY_DOMAIN", d)
+			}
+		} else if !isDefaults(p) {
+			if p.Confirm("Serve HTTPS too (port 443; HTTP then redirects to it)?", st.get("PROXY_TLS") == "1") {
+				st.set("PROXY_TLS", "1")
+				for attempt := 1; ; attempt++ {
+					d := strings.ToLower(strings.TrimSpace(p.Ask("Domain for a Let's Encrypt certificate (it must point at this host, with ports 80 and 443 reachable from the internet); empty for a self-signed certificate", st.get("PROXY_DOMAIN"))))
+					if d == "" || domainRe.MatchString(d) {
+						st.set("PROXY_DOMAIN", d)
+						break
+					}
+					p.Say("  %q isn't a DNS name like api.example.org", d)
+					if attempt == 3 {
+						p.Say("  leaving PROXY_DOMAIN unchanged")
+						break
+					}
+				}
+			} else if st.get("PROXY_TLS") == "1" {
+				st.set("PROXY_TLS", "0")
+				st.set("PROXY_DOMAIN", "")
+			}
+		}
+	}
 
 	// 4. Signer: only when asked for, with what it implies
 	if slices.Contains(profiles, "signer") {
@@ -321,6 +353,36 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		}
 		if p.Confirm("Use it anyway?", false) {
 			break
+		}
+	}
+
+	// 5b. Inbound peers (owner, 2026-11-13): the default is a node behind NAT, which only connects out.
+	// When the P2P port is forwarded (or the host has a public IP), the node has to advertise the address
+	// peers use, or they can't find it (the mainnet soak: no inbound peer until it was set)
+	p2pPort := orDefault(st.get("STACKS_CORE_P2P_PORT"), "20444")
+	if v, ok := answers["STACKS_P2P_ADDRESS"]; ok {
+		st.set("STACKS_P2P_ADDRESS", v)
+	} else if !isDefaults(p) {
+		current := st.get("STACKS_P2P_ADDRESS")
+		if p.Confirm(fmt.Sprintf("Can peers on the internet reach this host on P2P port %s (forwarded on your router, or a public IP)? Behind NAT, the usual case, answer no", p2pPort), current != "") {
+			for attempt := 1; ; attempt++ {
+				a := strings.TrimSpace(p.Ask("The address peers use (your public IP or DNS name, and port)", orDefault(current, "<public-ip>:"+p2pPort)))
+				err := checkP2PAddress(a)
+				if err == nil {
+					st.set("STACKS_P2P_ADDRESS", a)
+					if hasData(dataDir(c, "node")) && a != current {
+						p.Say("  The node advertises it once its peer database is rebuilt: see docs/requirements.md#behind-nat")
+					}
+					break
+				}
+				p.Say("  %v", err)
+				if attempt == 3 {
+					p.Say("  leaving STACKS_P2P_ADDRESS unchanged")
+					break
+				}
+			}
+		} else if current != "" {
+			st.set("STACKS_P2P_ADDRESS", "")
 		}
 	}
 
@@ -486,6 +548,22 @@ func runCommand(c *Ctx, name string, args []string) (int, error) {
 		}
 	}
 	return plan.Execute(c.Dir, c.Docker)
+}
+
+// domainRe is the config job's PROXY_DOMAIN check (tools/config).
+var domainRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
+
+// checkP2PAddress is the config job's check (tools/config), so init catches a bad value before start does.
+func checkP2PAddress(a string) error {
+	host, port, err := net.SplitHostPort(a)
+	p, perr := strconv.ParseUint(port, 10, 16)
+	if err != nil || perr != nil || p == 0 || host == "" || strings.ContainsAny(host, "/<>") {
+		return fmt.Errorf("STACKS_P2P_ADDRESS must be host:port, e.g. 203.0.113.7:%s, got %q", orDefault(port, "20444"), a)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return fmt.Errorf("peers can't reach %s: use this host's public address", host)
+	}
+	return nil
 }
 
 func orDefault(v, def string) string {

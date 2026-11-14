@@ -39,7 +39,7 @@ peer is shared by many nodes and often busy ([requirements](./docs/requirements.
 
 Services are chosen with `COMPOSE_PROFILES` in `.env`: `node` and `api` (the API and postgres) always run,
 plus any of `signer`,
-`proxy` (nginx) and `monitoring` (Prometheus and Grafana). A signer also needs its private key in
+`proxy` (Caddy) and `monitoring` (Prometheus and Grafana). A signer also needs its private key in
 `.env` (`SIGNER_PRIVATE_KEY`, or `TESTNET_SIGNER_PRIVATE_KEY` on testnet).
 
 Get `sbd` from the repo's [GitHub Releases](https://github.com/stx-labs/stacks-blockchain-docker/releases)
@@ -88,7 +88,7 @@ curl -sL localhost/v2/info | jq           # through the proxy (proxy profile)
 ```
 
 Everything listens on this host only, except the node's P2P port. To serve the API to other machines,
-add the `proxy` profile (nginx on port 80; terminate HTTPS in front of it); see
+add the `proxy` profile (Caddy: HTTP on port 80, and HTTPS with `PROXY_TLS=1`); see
 [Exposing services](./docs/usage.md#exposing-services).
 
 ## Documentation
@@ -101,5 +101,5 @@ add the `proxy` profile (nginx on port 80; terminate HTTPS in front of it); see
 - [Monitoring](./docs/monitoring.md)
 - [Common issues](./docs/issues.md)
 
-`./manage.sh`, the original script, still works but is deprecated and will be removed in a later
-release.
+`./manage.sh`, the original script, was removed (2026-11): plain `docker compose` or `sbd` replace it,
+and [Usage](./docs/usage.md#from-managesh) maps its commands.

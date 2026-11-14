@@ -118,27 +118,30 @@ type Container struct {
 
 // ParsePS reads `docker compose ps --format json`: one object per line (Compose ≥ 2.21) or a JSON
 // array (older releases).
-func ParsePS(out []byte) ([]Container, error) {
+func ParsePS(out []byte) ([]Container, error) { return parseRows[Container](out) }
+
+// parseRows reads docker's JSON output: one object per line, or a JSON array.
+func parseRows[T any](out []byte) ([]T, error) {
 	out = bytes.TrimSpace(out)
 	if len(out) == 0 {
 		return nil, nil
 	}
 	if out[0] == '[' {
-		var cs []Container
-		return cs, json.Unmarshal(out, &cs)
+		var rows []T
+		return rows, json.Unmarshal(out, &rows)
 	}
-	var cs []Container
+	var rows []T
 	for _, line := range bytes.Split(out, []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var c Container
-		if err := json.Unmarshal(line, &c); err != nil {
+		var r T
+		if err := json.Unmarshal(line, &r); err != nil {
 			return nil, err
 		}
-		cs = append(cs, c)
+		rows = append(rows, r)
 	}
-	return cs, nil
+	return rows, nil
 }
 
 // psArgs lists every container of the project, in every profile, including stopped ones.
@@ -167,20 +170,32 @@ func running(d Docker) ([]Container, error) {
 	return up, nil
 }
 
+// projectConfig is the part of `docker compose config` sbd uses.
+type projectConfig struct {
+	Name     string `json:"name"`
+	Services map[string]struct {
+		Profiles []string `json:"profiles"`
+	} `json:"services"`
+}
+
+func loadProjectConfig(d Docker) (projectConfig, error) {
+	var cfg projectConfig
+	out, err := d.Output([]string{"compose", "--profile", "*", "config", "--format", "json"})
+	if err != nil {
+		return cfg, err
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		return cfg, fmt.Errorf("docker compose config: %w", err)
+	}
+	return cfg, nil
+}
+
 // Services maps each service of the project to its profiles (none for always-on services such as
 // `config`), from `docker compose config`, so nothing here hard-codes the compose file.
 func Services(d Docker) (map[string][]string, error) {
-	out, err := d.Output([]string{"compose", "--profile", "*", "config", "--format", "json"})
+	cfg, err := loadProjectConfig(d)
 	if err != nil {
 		return nil, err
-	}
-	var cfg struct {
-		Services map[string]struct {
-			Profiles []string `json:"profiles"`
-		} `json:"services"`
-	}
-	if err := json.Unmarshal(out, &cfg); err != nil {
-		return nil, fmt.Errorf("docker compose config: %w", err)
 	}
 	m := map[string][]string{}
 	for name, s := range cfg.Services {

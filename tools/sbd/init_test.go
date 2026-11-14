@@ -78,8 +78,8 @@ func readEnv(t *testing.T, dir string) map[string]string {
 func TestInitFreshInstall(t *testing.T) {
 	dir, c := initProject(t, "-")
 	host, port, _ := net.SplitHostPort(fakePeer(t, btcMagic["testnet"], "/Satoshi:25.1.0/", 35619, false))
-	// network, signer, proxy, monitoring, BTC host, port, data root, write, bootstrap, start now
-	p := &scripted{answers: []string{"testnet", "n", "y", "y", host, port, "", "y", "genesis", "n"}}
+	// network, signer, proxy, monitoring, HTTPS (default no), BTC host, port, P2P reachable, data root, write, bootstrap, start now
+	p := &scripted{answers: []string{"testnet", "n", "y", "y", "", host, port, "", "", "y", "genesis", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -102,8 +102,8 @@ func TestInitFreshInstall(t *testing.T) {
 		}
 	}
 	for _, q := range p.asked {
-		if strings.Contains(q, "Run the Stacks Blockchain API") || strings.Contains(q, "HTTPS") {
-			t.Errorf("the API always runs and HTTPS isn't asked: %q", q)
+		if strings.Contains(q, "Run the Stacks Blockchain API") {
+			t.Errorf("the API always runs: %q", q)
 		}
 	}
 }
@@ -131,7 +131,7 @@ func TestInitSigner(t *testing.T) {
 	host, port, _ := net.SplitHostPort(fakePeer(t, btcMagic["mainnet"], "/Satoshi:31.1.0/", 974829, false))
 	key := strings.Repeat("ab", 32) + "01"
 	// network, signer yes, proxy, monitoring, continue, a bad key, a good key, host, port, data, write, bootstrap, start
-	p := &scripted{answers: []string{"", "y", "n", "n", "y", "nothex", key, host, port, "", "y", "genesis", "n"}}
+	p := &scripted{answers: []string{"", "y", "n", "n", "y", "nothex", key, host, port, "", "", "y", "genesis", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -162,7 +162,7 @@ func TestInitSeedNeedsItsOwnYes(t *testing.T) {
 	_, c := initProject(t, initSample)
 	host, port, _ := net.SplitHostPort(fakePeer(t, btcMagic["mainnet"], "/Satoshi:31.1.0/", 1, false))
 	// network, signer, proxy, monitoring, host, port, data, write, bootstrap=seed, run now? no
-	p := &scripted{answers: []string{"", "n", "n", "n", host, port, "", "y", "seed", "n"}}
+	p := &scripted{answers: []string{"", "n", "n", "n", host, port, "", "", "y", "seed", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -175,7 +175,7 @@ func TestInitSeedNeedsItsOwnYes(t *testing.T) {
 
 	_, c = initProject(t, initSample)
 	host, port, _ = net.SplitHostPort(fakePeer(t, btcMagic["mainnet"], "/Satoshi:31.1.0/", 1, false))
-	p = &scripted{answers: []string{"", "n", "n", "n", host, port, "", "y", "seed", "y", "y"}}
+	p = &scripted{answers: []string{"", "n", "n", "n", host, port, "", "", "y", "seed", "y", "y"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v", code, err)
 	}
@@ -188,7 +188,7 @@ func TestInitSeedNeedsItsOwnYes(t *testing.T) {
 func TestInitDoesntProbeTheDefaultPeer(t *testing.T) {
 	dir, c := initProject(t, initSample)
 	// network, signer, proxy, monitoring, host (default), port (default), data, write, bootstrap, start
-	p := &scripted{answers: []string{"", "n", "n", "n", "", "", "", "y", "genesis", "n"}}
+	p := &scripted{answers: []string{"", "n", "n", "n", "", "", "", "", "y", "genesis", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -204,7 +204,7 @@ func TestInitDoesntProbeTheDefaultPeer(t *testing.T) {
 func TestInitBadBitcoinPeer(t *testing.T) {
 	_, c := initProject(t, initSample)
 	// a closed port three times: init warns each time and keeps the last answer
-	p := &scripted{answers: []string{"", "n", "n", "n", "127.0.0.1", "1", "n", "127.0.0.1", "1", "n", "127.0.0.1", "1", "", "y", "genesis", "n"}}
+	p := &scripted{answers: []string{"", "n", "n", "n", "127.0.0.1", "1", "n", "127.0.0.1", "1", "n", "127.0.0.1", "1", "", "", "y", "genesis", "n"}}
 	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
 		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
 	}
@@ -218,5 +218,50 @@ func TestInitNeedsATerminalOrAnswers(t *testing.T) {
 	code, _, errOut := sbd(t, dir, &fakeDocker{version: "2.39.1"}, "init")
 	if code != 2 || !strings.Contains(errOut, "run it in a terminal") {
 		t.Errorf("exit %d: %s", code, errOut)
+	}
+}
+
+// Behind NAT is the default; a forwarded port asks for the address peers use (owner, 2026-11-13)
+func TestInitP2PAddress(t *testing.T) {
+	dir, c := initProject(t, initSample)
+	// network, signer, proxy, monitoring, host, port, reachable? (default no), data, write, bootstrap, start
+	p := &scripted{answers: []string{"", "n", "n", "n", "", "", "", "", "y", "genesis", "n"}}
+	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
+		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
+	}
+	if v := readEnv(t, dir)["STACKS_P2P_ADDRESS"]; v != "" {
+		t.Errorf("behind NAT by default, got %q", v)
+	}
+	// yes, then a bad address, then a good one
+	dir, c = initProject(t, initSample)
+	p = &scripted{answers: []string{"", "n", "n", "n", "", "", "y", "0.0.0.0:20444", "203.0.113.7:20444", "", "y", "genesis", "n"}}
+	if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
+		t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
+	}
+	if v := readEnv(t, dir)["STACKS_P2P_ADDRESS"]; v != "203.0.113.7:20444" || !strings.Contains(p.out.String(), "peers can't reach 0.0.0.0") {
+		t.Errorf("got %q:\n%s", v, p.out.String())
+	}
+}
+
+// The proxy serves HTTP unless HTTPS is asked for; a domain gets Let's Encrypt (owner, 2026-11-13)
+func TestInitProxyHTTPS(t *testing.T) {
+	for _, tc := range []struct {
+		answers     []string
+		tls, domain string
+	}{
+		// network, signer, proxy yes, monitoring, HTTPS?, [domain], host, port, P2P, data, write, bootstrap, start
+		{[]string{"", "n", "y", "n", "n", "", "", "", "", "y", "genesis", "n"}, "", ""},
+		{[]string{"", "n", "y", "n", "y", "", "", "", "", "", "y", "genesis", "n"}, "1", ""},
+		{[]string{"", "n", "y", "n", "y", "https://bad", "Wileyj.net", "", "", "", "", "y", "genesis", "n"}, "1", "wileyj.net"},
+	} {
+		dir, c := initProject(t, initSample)
+		p := &scripted{answers: tc.answers}
+		if code, err := runInit(c, p, map[string]string{}, false); code != 0 || err != nil {
+			t.Fatalf("exit %d: %v\n%s", code, err, p.out.String())
+		}
+		e := readEnv(t, dir)
+		if e["PROXY_TLS"] != tc.tls || e["PROXY_DOMAIN"] != tc.domain || !strings.Contains(e["COMPOSE_PROFILES"], "proxy") {
+			t.Errorf("%v: PROXY_TLS=%q PROXY_DOMAIN=%q\n%s", tc.answers, e["PROXY_TLS"], e["PROXY_DOMAIN"], p.out.String())
+		}
 	}
 }

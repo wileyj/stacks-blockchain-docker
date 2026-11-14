@@ -5,7 +5,7 @@
 # Chainstate archives are extracted with GNU tar + zstd/xz/gzip. musl's tools are about 40% slower than
 # glibc's, which costs nothing overall: extraction runs in parallel with the much longer restore.
 ARG PG_VERSION=17
-FROM golang:1.25 AS build
+FROM golang:1.27 AS build
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends zstd xz-utils >/dev/null && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY tools/seed/go.mod tools/seed/go.sum ./

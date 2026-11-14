@@ -7,6 +7,11 @@ Compose and with `sbd`.
 ## Patch and minor versions
 
 Change the versions in `.env`, then pull and restart. The node and the API migrate their data on start.
+Some of these migrations are one-way, so going back to an older version needs data from before the
+upgrade (a backup, or `sbd seed`). For example, stacks-core 4.0.6 and later move the chainstate to a
+newer format that older releases can't open, and API 9.8.0 and 9.9.0 each take 5–15 minutes to migrate
+the database on their first start. Upgrade the node and the signer together: the 4.0.6+ signer relies on
+an endpoint only 4.0.6+ nodes have.
 
 ```bash
 docker compose pull --ignore-buildable
@@ -14,6 +19,25 @@ docker compose --profile '*' down
 docker compose up -d
 # sbd: sbd pull && sbd restart
 ```
+
+## One service
+
+To update the API or the signer without stopping the rest (they get releases more often than the
+node), recreate only that service. The node holds its tip while the API is away, retrying for at most
+3 minutes between attempts, then catches up; an API release with a database migration holds it for the
+migration's duration. The signer misses signatures while it restarts.
+
+```bash
+# set STACKS_BLOCKCHAIN_API_VERSION in .env, then
+docker compose pull stacks-blockchain-api
+docker compose run --rm config
+docker compose up -d --no-deps --force-recreate stacks-blockchain-api
+# sbd: sbd update api --version 9.10.0
+```
+
+`sbd update` takes `node`, `api`, `signer` or `proxy`, and only a running service: on a stopped stack,
+use `sbd start`. It refuses a signer newer than the node, which goes first. Postgres majors are
+`sbd db upgrade` (below).
 
 ## A new PostgreSQL major
 
@@ -59,17 +83,34 @@ two changes, and `sbd migrate` makes them without moving any data (`sbd plan mig
   suggest` writes your own settings from it to `Config.overrides.toml.suggested`; review it and rename it
   to `Config.overrides.toml`.
 
-Stop a stack started with the old layout with `./manage.sh -n <network> -a stop` before starting the
-new one.
+Stop a stack still running from the old layout before starting the new one. `manage.sh` is gone, so
+stop it directly: the node first, with time to finish its run loop, then the rest of the old project:
+
+```bash
+docker stop -t 1200 stacks-blockchain
+docker compose -p compose-files down
+```
 
 ## Breaking: services listen on this host only
 
 The API (3999) and the node RPC (20443) used to be published on every interface. They now listen on
 `127.0.0.1` only; the node's P2P port stays public. If other machines use your API, add the `proxy`
-profile (nginx on port 80), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
+profile (now Caddy, see below), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
 `EXPOSE_POSTGRES` and `compose.postgres-port.yaml` are replaced by `POSTGRES_LOCAL=1`, which publishes
 postgres on 127.0.0.1 only (it can no longer be published beyond this host), and
 `METRICS_BIND_ADDR` / `MONITORING_BIND` are gone: monitoring is never published beyond this host.
 `sbd migrate` lists the settings that changed. See [Exposing services](./usage.md#exposing-services).
 
 _API event replay (`-a export` / `-a import`) was removed: the archive snapshots replace it._
+
+## The proxy is Caddy (2026-11)
+
+The `proxy` profile's nginx service is replaced by Caddy, in a service named `proxy`: HTTP on port 80
+as before, and HTTPS with `PROXY_TLS=1` (see [Exposing services](./usage.md#exposing-services)).
+`NGINX_PROXY_PORT` is now `PROXY_HTTP_PORT`. The old `nginx` container isn't part of the project any
+more, so stop it with the old files still in place, or remove it afterwards:
+
+```bash
+docker compose --profile '*' down --remove-orphans
+docker compose up -d
+```

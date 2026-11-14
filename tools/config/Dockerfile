@@ -1,7 +1,7 @@
 # The `config` job image: renders conf/<network>/Config.toml and Signer.toml (see main.go).
 # Built locally by `docker compose` (compose.yaml `build:`); the build also runs the unit tests,
 # which need the repo's conf/ templates, so the build context is the repo root.
-FROM golang:1.25 AS build
+FROM golang:1.27 AS build
 WORKDIR /src/tools/config
 COPY tools/config/go.mod tools/config/go.sum ./
 RUN go mod download

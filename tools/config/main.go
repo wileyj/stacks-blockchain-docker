@@ -84,9 +84,15 @@ func run(confRoot string, getenv func(string) string) error {
 	return nil
 }
 
-// renderProxy writes conf/nginx/proxy.conf for the proxy profile and removes it otherwise.
+// renderProxy writes conf/proxy/Caddyfile for the proxy profile and removes it otherwise. The nginx
+// proxy's conf/nginx/proxy.conf (before 2026-11-13) is removed when it is one of ours.
 func renderProxy(confRoot string, s Settings) error {
-	dest := filepath.Join(confRoot, "nginx", "proxy.conf")
+	if old := filepath.Join(confRoot, "nginx", "proxy.conf"); generated(old) {
+		if err := os.Remove(old); err != nil {
+			return err
+		}
+	}
+	dest := filepath.Join(confRoot, "proxy", "Caddyfile")
 	if !s.Profiles["proxy"] {
 		if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -99,7 +105,14 @@ func renderProxy(confRoot string, s Settings) error {
 	if err := writeAtomic(dest, RenderProxy(s), 0o644); err != nil {
 		return err
 	}
-	fmt.Println("config: wrote nginx/proxy.conf")
+	mode := "HTTP"
+	switch {
+	case s.ProxyTLS && s.ProxyDomain != "":
+		mode = "HTTPS for " + s.ProxyDomain + " (Let's Encrypt)"
+	case s.ProxyTLS:
+		mode = "HTTPS (self-signed)"
+	}
+	fmt.Printf("config: wrote proxy/Caddyfile: %s\n", mode)
 	return nil
 }
 
@@ -169,6 +182,12 @@ func renderFile(dir, name string, s Settings, render renderer) error {
 	}
 	fmt.Printf("config: wrote %s\n", filepath.Join(s.Network, name))
 	return nil
+}
+
+// generated reports whether path exists and was written by this job.
+func generated(path string) bool {
+	b, err := os.ReadFile(path)
+	return err == nil && bytes.HasPrefix(b, []byte(Marker))
 }
 
 // moveLegacy moves a file that wasn't written by this job (a hand-edited or manage.sh-rendered

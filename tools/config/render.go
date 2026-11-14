@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"sort"
 	"strconv"
@@ -31,6 +32,7 @@ type Settings struct {
 	APIObserverTimeoutMS string
 	CoreRPCHost          string
 	CoreRPCPort          string
+	CoreP2PPort          string
 	SignerKey            string
 	// ContainerMetrics: cAdvisor runs with the monitoring profile (MONITORING_CONTAINER_METRICS=1)
 	ContainerMetrics bool
@@ -40,6 +42,12 @@ type Settings struct {
 	Alerts, AlertWebhook, AlertEmail bool
 	// The proxy profile: the API's port inside the network
 	APIPort string
+	// P2PAddress is the address peers reach this node on (host:port). Empty, the default, is a node
+	// behind NAT: it connects out to peers and accepts none from the internet (owner, 2026-11-13)
+	P2PAddress string
+	// The proxy profile's HTTPS (owner, 2026-11-13): off by default
+	ProxyTLS                    bool
+	ProxyDomain, ProxyACMEEmail string
 }
 
 var durationRe = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
@@ -64,6 +72,10 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 			s.Profiles[p] = true
 		}
 	}
+	// The node and the API always run (owner, 2026-11-06, Q19 revised); sbd refuses the same
+	if !s.Profiles["node"] || !s.Profiles["api"] {
+		return s, fmt.Errorf("COMPOSE_PROFILES=%q must include node and api (they always run); add any of signer, proxy, monitoring", getenv("COMPOSE_PROFILES"))
+	}
 
 	// Testnet has its own BTC peer and signer key variables (contract §A.15)
 	btc, key := "BTC_", "SIGNER_PRIVATE_KEY"
@@ -82,6 +94,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	s.SignerMetricsPort = getenv("SIGNER_METRICS_PORT")
 	s.CoreRPCHost = orDefault(getenv("STACKS_CORE_RPC_HOST"), "stacks-blockchain")
 	s.CoreRPCPort = orDefault(getenv("STACKS_CORE_RPC_PORT"), "20443")
+	s.CoreP2PPort = orDefault(getenv("STACKS_CORE_P2P_PORT"), "20444")
 	s.APIEventEndpoint = orDefault(getenv("API_EVENT_ENDPOINT"),
 		"stacks-blockchain-api:"+orDefault(getenv("STACKS_CORE_EVENT_PORT"), "3700"))
 	s.APIObserverTimeoutMS = orDefault(getenv("API_OBSERVER_TIMEOUT_MS"), "60000")
@@ -90,6 +103,13 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		return s, fmt.Errorf("PROMETHEUS_APP_SCRAPE_INTERVAL must be a duration like 15s or 1m, got %q", s.AppScrapeInterval)
 	}
 	s.APIPort = orDefault(getenv("STACKS_BLOCKCHAIN_API_PORT"), "3999")
+	if err := proxySettings(&s, getenv); err != nil {
+		return s, err
+	}
+	s.P2PAddress = strings.TrimSpace(getenv("STACKS_P2P_ADDRESS"))
+	if err := checkP2PAddress(s.P2PAddress); err != nil {
+		return s, err
+	}
 	if v := orDefault(getenv("POSTGRES_LOCAL"), "0"); v != "0" && v != "1" {
 		return s, fmt.Errorf("POSTGRES_LOCAL must be 0 or 1, got %q", v)
 	}
@@ -121,7 +141,7 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 	for name, v := range map[string]string{
 		btc + "RPC_PORT": s.BTCRPCPort, btc + "P2P_PORT": s.BTCP2PPort, "NODE_METRICS_PORT": s.NodeMetricsPort,
 		"STACKS_SIGNER_PORT": s.SignerPort, "SIGNER_METRICS_PORT": s.SignerMetricsPort,
-		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
+		"STACKS_CORE_RPC_PORT": s.CoreRPCPort, "STACKS_CORE_P2P_PORT": s.CoreP2PPort, "API_OBSERVER_TIMEOUT_MS": s.APIObserverTimeoutMS,
 		"STACKS_BLOCKCHAIN_API_PORT": s.APIPort,
 	} {
 		if v != "" {
@@ -131,6 +151,22 @@ func SettingsFromEnv(getenv func(string) string) (Settings, error) {
 		}
 	}
 	return s, nil
+}
+
+// checkP2PAddress accepts host:port with a real host, which is what the node advertises to peers.
+func checkP2PAddress(a string) error {
+	if a == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(a)
+	p, perr := strconv.ParseUint(port, 10, 16)
+	if err != nil || perr != nil || p == 0 || host == "" || strings.Contains(host, "/") {
+		return fmt.Errorf("STACKS_P2P_ADDRESS must be host:port, e.g. 203.0.113.7:20444 or node.example.com:20444, got %q", a)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return fmt.Errorf("STACKS_P2P_ADDRESS=%q: peers can't reach %s; use this node's public address, or leave it empty behind NAT", a, host)
+	}
+	return nil
 }
 
 // Observers returns the [[events_observer]] entries for the enabled profiles, so the node never
@@ -177,6 +213,10 @@ func RenderNode(tmpl, overrides []byte, s Settings, source string) ([]byte, erro
 		node["prometheus_bind"] = "0.0.0.0:" + s.NodeMetricsPort
 	}
 	node["stacker"] = s.Profiles["signer"]
+	// compose publishes these ports and the API and signer call the RPC port: the node must listen on them
+	node["rpc_bind"] = "0.0.0.0:" + s.CoreRPCPort
+	node["p2p_bind"] = "0.0.0.0:" + s.CoreP2PPort
+	setString(node, "p2p_address", s.P2PAddress)
 	delete(m, "events_observer")
 	if obs := s.Observers(); len(obs) > 0 {
 		m["events_observer"] = obs
