@@ -21,6 +21,7 @@ both: neither keeps state the other doesn't see.
 | One service's logs | `docker compose logs -f --tail 100 <service>` | `sbd logs <service>` |
 | Export every container's log | `docker compose --profile '*' logs --no-color --timestamps <service> > exported-logs/<container>.log` | `sbd logs export` |
 | Pull the images pinned in `.env` | `docker compose pull --ignore-buildable` | `sbd pull` |
+| Update one service, the others keep running (see [Upgrades](./upgrade.md#one-service)) | set its version in `.env`, then `docker compose pull <service>`, `docker compose run --rm config`, `docker compose up -d --no-deps --force-recreate <service>` | `sbd update <node\|api\|signer\|proxy> [--version V]` |
 | Render `Config.toml`/`Signer.toml` (`up` does it too) | `docker compose run --rm config` | `sbd config render` |
 | Seed from the Hiro archive (stopped stack) | `docker compose run --rm seed` | `sbd seed [seed options]` |
 | Delete this network's data (stopped stack) | `docker compose run --rm reset --yes` (without `--yes`, it asks on a terminal) | `sbd reset [--yes]` |

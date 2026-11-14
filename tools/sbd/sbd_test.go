@@ -302,11 +302,12 @@ func TestPlansAreDocumented(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "conf", "mainnet", "Config.toml"), []byte("[node]\n"), 0o644)
 	placeholders := strings.NewReplacer(
 		"--timestamps stacks-blockchain > exported-logs/stacks-blockchain.log", "--timestamps <service> > exported-logs/<container>.log",
-		"--tail 100 stacks-blockchain", "--tail 100 <service>")
+		"--tail 100 stacks-blockchain", "--tail 100 <service>",
+		"pull stacks-blockchain-api", "pull <service>", "--force-recreate stacks-blockchain-api", "--force-recreate <service>")
 	seen := map[string]bool{}
 	for _, args := range [][]string{
 		{"start"}, {"stop"}, {"logs"}, {"logs", "stacks-blockchain"}, {"logs", "export"},
-		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"db", "upgrade"}, {"config", "render"}, {"migrate"},
+		{"pull"}, {"seed"}, {"reset", "--yes"}, {"bns"}, {"db", "upgrade"}, {"config", "render"}, {"migrate"}, {"update", "api"},
 	} {
 		_, out, _ := sbd(t, dir, &fakeDocker{ps: strings.SplitN(runningPS, "\n", 2)[0]}, append([]string{"plan"}, args...)...)
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {

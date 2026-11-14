@@ -20,6 +20,25 @@ docker compose up -d
 # sbd: sbd pull && sbd restart
 ```
 
+## One service
+
+To update the API or the signer without stopping the rest (they get releases more often than the
+node), recreate only that service. The node holds its tip while the API is away, retrying for at most
+3 minutes between attempts, then catches up; an API release with a database migration holds it for the
+migration's duration. The signer misses signatures while it restarts.
+
+```bash
+# set STACKS_BLOCKCHAIN_API_VERSION in .env, then
+docker compose pull stacks-blockchain-api
+docker compose run --rm config
+docker compose up -d --no-deps --force-recreate stacks-blockchain-api
+# sbd: sbd update api --version 9.10.0
+```
+
+`sbd update` takes `node`, `api`, `signer` or `proxy`, and only a running service: on a stopped stack,
+use `sbd start`. It refuses a signer newer than the node, which goes first. Postgres majors are
+`sbd db upgrade` (below).
+
 ## A new PostgreSQL major
 
 Raise `POSTGRES_VERSION` in `.env`, then upgrade the database before starting the stack (the new
