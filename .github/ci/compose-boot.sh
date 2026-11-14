@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compose-only boot test (refactor/14 §2.1 R7): no manage.sh, no CLI. In a copy of the repo:
+# Compose-only boot test (refactor/14 §2.1 R7): no CLI. In a copy of the repo:
 #   cp sample.env .env, set NETWORK/COMPOSE_PROFILES, `docker compose up -d`, hold BOOT_SECS,
 #   then `docker compose --profile '*' down` and check the node stopped cleanly.
 # Pass: the config jobs succeed, postgres and the API become healthy (when enabled), every service

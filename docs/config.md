@@ -30,9 +30,8 @@ Most variables in `.env` shouldn't be modified, but there are a few you may wish
 
 | Name                            | Description                                           | Default Value             |
 | ------------------------------- | ----------------------------------------------------- | ------------------------- |
-| `VERBOSE`                       | Enables verbose logging in the deprecated `./manage.sh` | `false`                 |
 | `DOCKER_NETWORK`                | Name of docker network used to launch services        | `stacks`                  |
-| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: always `node` and `api` (API + postgres), plus any of `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it; the deprecated `./manage.sh` selects them with `-f` per run instead | `node,api` |
+| `COMPOSE_PROFILES`              | Services `docker compose up -d` starts: always `node` and `api` (API + postgres), plus any of `signer`, `proxy`, `monitoring`. `sbd start --with/--without` edits it | `node,api` |
 | `DATA_ROOT`                     | Where the data lives: `<DATA_ROOT>/<network>/{stacks-blockchain,postgres,stacks-signer}` and `<DATA_ROOT>/bns-data` | `./persistent-data` |
 | `STACKS_DATA_DIR`, `POSTGRES_DATA_DIR`, `SIGNER_DATA_DIR` | One component's data dir, e.g. on a dedicated disk | under `DATA_ROOT` |
 | `API_BIND_ADDR`, `RPC_BIND_ADDR` | Host address the API (3999) and the node RPC (20443) are published on. To serve the API to other machines, prefer the `proxy` profile | `127.0.0.1` |

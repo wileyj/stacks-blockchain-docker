@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       ## Error level only for now; the existing warnings are cleaned up in phase 1
       - name: shellcheck
-        run: shellcheck -x -S error manage.sh scripts/*.sh tools/*.sh .github/ci/*.sh
+        run: shellcheck -x -S error scripts/*.sh tools/*.sh .github/ci/*.sh
       - name: docker compose config (every network x profile x flag)
         run: .github/ci/compose-config.sh
       - name: build the seed job image (runs its unit tests)
@@ -36,15 +36,6 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w --entrypoint promtool prom/prometheus:v3.15.0 test rules tools/monitoring/stacks.test.yml
           for f in conf/monitoring/grafana/dashboards/*.json; do python3 -m json.tool "$f" >/dev/null || { echo "invalid JSON: $f"; exit 1; }; done
 
-  harness:
-    name: manage.sh characterization harness
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: harness --check
-        if: hashFiles('refactor/harness/run.sh') != ''
-        run: refactor/harness/run.sh --check
-
   check-config:
     name: check-config on rendered configs
     runs-on: ubuntu-24.04
@@ -53,7 +44,7 @@ jobs:
       - name: render with the config job, validate with the pinned images
         run: .github/ci/check-config.sh mainnet testnet
 
-  ## Plain `docker compose` from the repo root, no manage.sh (refactor/14 §2.1 R7). Also builds the
+  ## Plain `docker compose` from the repo root, no CLI (refactor/14 §2.1 R7). Also builds the
   ## config renderer image, which runs its unit tests during the build.
   compose-boot:
     name: compose-only boot (${{ matrix.network }} ${{ matrix.profiles }})

@@ -64,8 +64,13 @@ two changes, and `sbd migrate` makes them without moving any data (`sbd plan mig
   suggest` writes your own settings from it to `Config.overrides.toml.suggested`; review it and rename it
   to `Config.overrides.toml`.
 
-Stop a stack started with the old layout with `./manage.sh -n <network> -a stop` before starting the
-new one.
+Stop a stack still running from the old layout before starting the new one. `manage.sh` is gone, so
+stop it directly: the node first, with time to finish its run loop, then the rest of the old project:
+
+```bash
+docker stop -t 1200 stacks-blockchain
+docker compose -p compose-files down
+```
 
 ## Breaking: services listen on this host only
 

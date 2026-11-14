@@ -3,7 +3,6 @@
 - [Docker](./docker.md) >= `20.10.12`
 - [docker compose](./docker.md) >= `2.24.0` (`2.27.2` or later recommended)
 - [git](https://git-scm.com/downloads)
-- For the deprecated `./manage.sh` only: bash and GNU sed. Plain `docker compose` and `sbd` need nothing else.
 
 `sbd doctor` checks all of the following on the host it runs on (warnings only; nothing blocks).
 

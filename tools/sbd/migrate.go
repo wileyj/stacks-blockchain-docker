@@ -75,7 +75,7 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 		note(filepath.Join(dataRoot, net, "event-replay") + " is no longer used (event replay was removed); delete it to free the space")
 	}
 	if out, err := c.Docker.Output([]string{"ps", "-q", "--filter", "label=com.docker.compose.project=compose-files"}); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		note("containers from the old compose-files layout are running: stop them with ./manage.sh -n " + net + " -a stop before starting this stack")
+		note("containers from the old compose-files layout are running: stop them before starting this stack: docker stop -t 1200 stacks-blockchain && docker compose -p compose-files down (docs/upgrade.md)")
 	}
 	if len(p) == 0 {
 		note("nothing to migrate")

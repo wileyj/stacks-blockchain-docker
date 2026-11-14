@@ -7,7 +7,7 @@ REPO="$(cd -- "$(dirname "${0}")/../.." >/dev/null 2>&1 ; pwd -P)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 cp "${REPO}/sample.env" "${TMP}/.env"
-USER_ID="$(id -u)"   # manage.sh exports this for the bns job
+USER_ID="$(id -u)"   # compose.yaml passes it to the bns job; set so `config` doesn't warn
 export USER_ID
 
 fail=0

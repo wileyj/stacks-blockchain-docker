@@ -187,11 +187,10 @@ legacy BNS v1 data from `./persistent-data/bns-data` while it syncs. A seeded no
 docker compose run --rm bns     # sbd: sbd bns
 ```
 
-## `./manage.sh` (deprecated)
+## From `manage.sh`
 
-`./manage.sh` still works the way it did, wrapping the same `compose.yaml`, and prints a deprecation
-notice on stderr. It will be removed in a later release. Its flags apply to one run only, while
-`COMPOSE_PROFILES` and `sbd start --with` persist the choice in `.env`.
+`./manage.sh` was removed (2026-11). Its flags applied to one run only, while `COMPOSE_PROFILES` and
+`sbd start --with` keep the choice in `.env`. Its commands map to:
 
 | `./manage.sh` | Plain Docker Compose | `sbd` |
 |---|---|---|
@@ -204,6 +203,6 @@ notice on stderr. It will be removed in a later release. Its flags apply to one 
 | `bns` | `docker compose run --rm bns` | `sbd bns` |
 | `status` | `docker compose ps` | `sbd status` |
 
-A stack started from the old `compose-files/` layout is stopped by `./manage.sh -n <network> -a stop`;
-see [Upgrading](./upgrade.md#an-install-from-before-the-compose-layout) for moving such an install over.
-API event replay (`-a export` / `-a import`) was removed: resync from a Hiro archive snapshot instead.
+A stack still running from the old `compose-files/` layout: see
+[Upgrading](./upgrade.md#an-install-from-before-the-compose-layout). API event replay (`-a export` /
+`-a import`) was removed too: resync from a Hiro archive snapshot instead.

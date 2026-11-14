@@ -101,5 +101,5 @@ add the `proxy` profile (Caddy: HTTP on port 80, and HTTPS with `PROXY_TLS=1`); 
 - [Monitoring](./docs/monitoring.md)
 - [Common issues](./docs/issues.md)
 
-`./manage.sh`, the original script, still works but is deprecated and will be removed in a later
-release.
+`./manage.sh`, the original script, was removed (2026-11): plain `docker compose` or `sbd` replace it,
+and [Usage](./docs/usage.md#from-managesh) maps its commands.
