@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -452,5 +453,110 @@ func TestProblems(t *testing.T) {
 	m.chain.NodeErr = "connection refused"
 	if got := texts(); !strings.Contains(got, "the node doesn't answer on its RPC port: connection refused") {
 		t.Errorf("node down: %s", got)
+	}
+}
+
+// The owner's dry-run mainnet signer, 2026-11-13 (testdata/signer-metrics.txt)
+func TestFetchSigner(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("testdata", "signer-metrics.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/metrics" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(body)
+	}))
+	defer srv.Close()
+	si := fetchSigner(srv.Client(), srv.URL)
+	if si.Err != "" || si.NodeHeight != 9480927 || si.Cycle != 147 || si.Accepted != 150698 || si.Rejected != 4569 ||
+		si.Proposals != 154295 || si.LatCount != 155267 {
+		t.Fatalf("got %+v", si)
+	}
+	if si := fetchSigner(srv.Client(), srv.URL+"/nope"); si.Err == "" {
+		t.Error("a 404 must be an error")
+	}
+	if si := fetchSigner(srv.Client(), ""); si.Err != "not reachable" {
+		t.Errorf("no endpoint: %q", si.Err)
+	}
+}
+
+func signerFixture(t *testing.T) *uiModel {
+	t.Helper()
+	m := uiFixture(t)
+	m.c = &Ctx{Env: mustParse(t, "NETWORK=mainnet\nCOMPOSE_PROFILES=node,api,signer\n")}
+	m.svcs = append(m.svcs, uiService{psRow: psRow{Service: "stacks-signer", Name: "sbd-x-stacks-signer", State: "running"}, Started: m.now.Add(-time.Hour)})
+	m.svcs = slices.DeleteFunc(m.svcs, func(s uiService) bool { return s.Service == "stacks-signer" && s.State == "exited" })
+	m.signer = signerInfo{NodeHeight: m.chain.Tip, Cycle: 147, Accepted: 150698, Rejected: 4569, Proposals: 154295, LatencySum: 1135344, LatCount: 155267}
+	m.signerAt = m.now
+	// 10 min of a healthy signer: 40 accepted, 1 rejected
+	for i := range signerWindow {
+		m.sigAcc.add(150658 + float64(i*40/(signerWindow-1)))
+		m.sigRej.add(4568 + float64(i/(signerWindow-1)))
+		m.sigProp.add(154254 + float64(i*41/(signerWindow-1)))
+	}
+	return m
+}
+
+func TestSignerPanel(t *testing.T) {
+	m := signerFixture(t)
+	m.w, m.h = 100, 40
+	out := m.render()
+	for _, want := range []string{"── SIGNER", "height 9,449,931", "lag 0", "cycle 147", "150,698 accepted · 4,569 rejected (2.9%)",
+		"last 9m55s +40 accepted, +1 rejected", "avg response 7 ms"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "── SIGNER") > strings.Index(out, "── PROBLEMS") || strings.Index(out, "── POX") > strings.Index(out, "── SIGNER") {
+		t.Error("SIGNER belongs between POX and PROBLEMS")
+	}
+	if got := m.problems(); len(got) != 1 || got[0].text != "none" {
+		t.Errorf("a healthy signer is no problem: %+v", got)
+	}
+	// Without the signer profile there's no panel
+	plain := uiFixture(t)
+	plain.w, plain.h = 100, 40
+	if strings.Contains(plain.render(), "SIGNER") {
+		t.Error("SIGNER panel without the signer profile")
+	}
+}
+
+func TestSignerProblems(t *testing.T) {
+	texts := func(m *uiModel) string {
+		var s []string
+		for _, p := range m.problems() {
+			s = append(s, p.text)
+		}
+		return strings.Join(s, " | ")
+	}
+	m := signerFixture(t)
+	m.signer.NodeHeight -= 9
+	if got := texts(m); !strings.Contains(got, "the signer is 9 blocks behind the node") {
+		t.Errorf("lag: %s", got)
+	}
+	m = signerFixture(t)
+	m.sigRej = newRing(signerWindow)
+	for i := range signerWindow {
+		m.sigRej.add(4568 + float64(i*60/(signerWindow-1)))
+	}
+	if got := texts(m); !strings.Contains(got, "the signer rejected 60% of 100 blocks") {
+		t.Errorf("rejections: %s", got)
+	}
+	m = signerFixture(t)
+	m.sigAcc, m.sigRej = newRing(signerWindow), newRing(signerWindow)
+	for range signerWindow {
+		m.sigAcc.add(150698)
+		m.sigRej.add(4569)
+	}
+	if got := texts(m); !strings.Contains(got, "received 41 proposals in the last 9m55s and answered none") {
+		t.Errorf("silent signer: %s", got)
+	}
+	m = signerFixture(t)
+	m.signer.Err = "connection refused"
+	if got := texts(m); !strings.Contains(got, "the signer's metrics don't answer: connection refused") {
+		t.Errorf("metrics down: %s", got)
 	}
 }

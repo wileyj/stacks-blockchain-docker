@@ -1,0 +1,210 @@
+# HELP stacks_signer_agreement_state_change_reasons The number of state machine changes in signer agreement protocol. `reason` can be one of: 'burn_block_arrival', 'stacks_block_arrival', 'inactive_miner', 'protocol_upgrade', 'miner_view_update', 'miner_parent_tenure_update'
+# TYPE stacks_signer_agreement_state_change_reasons counter
+stacks_signer_agreement_state_change_reasons{reason="burn_block_arrival"} 2523
+stacks_signer_agreement_state_change_reasons{reason="inactive_miner"} 12
+stacks_signer_agreement_state_change_reasons{reason="miner_parent_tenure_update"} 12
+stacks_signer_agreement_state_change_reasons{reason="miner_view_update"} 35
+stacks_signer_agreement_state_change_reasons{reason="stacks_block_arrival"} 526
+# HELP stacks_signer_agreement_state_conflicts The number of state machine conflicts in signer agreement protocol. `conflict` can be one of: 'burn_block_delay', 'stacks_block_delay', 'miner_view'
+# TYPE stacks_signer_agreement_state_conflicts counter
+stacks_signer_agreement_state_conflicts{conflict="burn_block_delay"} 525
+stacks_signer_agreement_state_conflicts{conflict="miner_view"} 81
+# HELP stacks_signer_block_pre_commits_sent The number of block pre-commits sent by the signer
+# TYPE stacks_signer_block_pre_commits_sent counter
+stacks_signer_block_pre_commits_sent 150626
+# HELP stacks_signer_block_proposals_received The number of block proposals received by the signer
+# TYPE stacks_signer_block_proposals_received counter
+stacks_signer_block_proposals_received 154295
+# HELP stacks_signer_block_response_latencies_histogram Time (seconds) measuring end-to-end time to respond to a block
+# TYPE stacks_signer_block_response_latencies_histogram histogram
+stacks_signer_block_response_latencies_histogram_bucket{le="0.005"} 0
+stacks_signer_block_response_latencies_histogram_bucket{le="0.1"} 0
+stacks_signer_block_response_latencies_histogram_bucket{le="0.25"} 0
+stacks_signer_block_response_latencies_histogram_bucket{le="0.5"} 0
+stacks_signer_block_response_latencies_histogram_bucket{le="1"} 32
+stacks_signer_block_response_latencies_histogram_bucket{le="2.5"} 1029
+stacks_signer_block_response_latencies_histogram_bucket{le="5"} 27464
+stacks_signer_block_response_latencies_histogram_bucket{le="10"} 140778
+stacks_signer_block_response_latencies_histogram_bucket{le="20"} 153906
+stacks_signer_block_response_latencies_histogram_bucket{le="30"} 154627
+stacks_signer_block_response_latencies_histogram_bucket{le="60"} 154903
+stacks_signer_block_response_latencies_histogram_bucket{le="120"} 155042
+stacks_signer_block_response_latencies_histogram_bucket{le="+Inf"} 155267
+stacks_signer_block_response_latencies_histogram_sum 1135344.8539999991
+stacks_signer_block_response_latencies_histogram_count 155267
+# HELP stacks_signer_block_responses_sent The number of block responses sent. `response_type` is either 'accepted' or 'rejected'
+# TYPE stacks_signer_block_responses_sent counter
+stacks_signer_block_responses_sent{response_type="accepted"} 150698
+stacks_signer_block_responses_sent{response_type="rejected"} 4569
+# HELP stacks_signer_block_validation_latencies_histogram Time (seconds) measuring block validation time reported by the Stacks node
+# TYPE stacks_signer_block_validation_latencies_histogram histogram
+stacks_signer_block_validation_latencies_histogram_bucket{le="0.005"} 0
+stacks_signer_block_validation_latencies_histogram_bucket{le="0.1"} 121248
+stacks_signer_block_validation_latencies_histogram_bucket{le="0.25"} 133062
+stacks_signer_block_validation_latencies_histogram_bucket{le="0.5"} 141465
+stacks_signer_block_validation_latencies_histogram_bucket{le="1"} 148959
+stacks_signer_block_validation_latencies_histogram_bucket{le="2.5"} 150259
+stacks_signer_block_validation_latencies_histogram_bucket{le="5"} 150259
+stacks_signer_block_validation_latencies_histogram_bucket{le="10"} 150259
+stacks_signer_block_validation_latencies_histogram_bucket{le="20"} 150259
+stacks_signer_block_validation_latencies_histogram_bucket{le="+Inf"} 150259
+stacks_signer_block_validation_latencies_histogram_sum 17394.211000001553
+stacks_signer_block_validation_latencies_histogram_count 150259
+# HELP stacks_signer_block_validation_responses The number of block validation responses. `response_type` is either 'accepted' or 'rejected'
+# TYPE stacks_signer_block_validation_responses counter
+stacks_signer_block_validation_responses{response_type="accepted"} 150259
+stacks_signer_block_validation_responses{response_type="rejected"} 256
+# HELP stacks_signer_current_reward_cycle The current reward cycle
+# TYPE stacks_signer_current_reward_cycle gauge
+stacks_signer_current_reward_cycle 147
+# HELP stacks_signer_node_rpc_call_latencies_histogram Time (seconds) measuring round-trip RPC call latency to the Stacks node
+# TYPE stacks_signer_node_rpc_call_latencies_histogram histogram
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.05"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.1"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.25"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="0.5"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="1"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="2.5"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="5"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="10"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/accounts/:principal",le="+Inf"} 1
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v2/accounts/:principal"} 0.091794927
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v2/accounts/:principal"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.05"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.1"} 2
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.25"} 2
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="0.5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="1"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="2.5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="10"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle",le="+Inf"} 3
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle"} 0.437420694
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v2/contracts/call-read/:principal/signers/get-last-set-cycle"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.05"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.1"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.25"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="0.5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="1"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="2.5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="5"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="10"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page",le="+Inf"} 3
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page"} 0.18366254999999998
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v2/contracts/call-read/:principal/signers/stackerdb-get-signer-slots-page"} 3
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.005"} 167
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.01"} 185
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.025"} 189
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.05"} 382
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.1"} 4349
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.25"} 8368
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="0.5"} 9445
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="1"} 9778
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="2.5"} 9847
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="5"} 9875
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="10"} 9910
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/info",le="+Inf"} 9967
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v2/info"} 3250.701809660992
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v2/info"} 9967
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.05"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.1"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.25"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="0.5"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="1"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="2.5"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="5"} 37
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="10"} 37
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v2/pox",le="+Inf"} 37
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v2/pox"} 143.84941003199998
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v2/pox"} 37
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.05"} 859
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.1"} 35697
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.25"} 136745
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="0.5"} 149631
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="1"} 150426
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="2.5"} 150454
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="5"} 150464
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="10"} 150491
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/block_proposal",le="+Inf"} 150516
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v3/block_proposal"} 21478.753812941086
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v3/block_proposal"} 150516
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.005"} 298
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.01"} 722
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.025"} 5060
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.05"} 55831
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.1"} 216888
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.25"} 266196
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="0.5"} 279985
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="1"} 282008
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="2.5"} 282102
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="5"} 282127
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="10"} 282179
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/blocks/upload/?broadcast=1",le="+Inf"} 282188
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v3/blocks/upload/?broadcast=1"} 28011.369754086
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v3/blocks/upload/?broadcast=1"} 282188
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.005"} 8
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.01"} 14
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.025"} 43
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.05"} 571
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.1"} 3708
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.25"} 4721
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="0.5"} 4960
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="1"} 4990
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="2.5"} 4997
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="5"} 5000
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="10"} 5005
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/sortitions/latest_and_last",le="+Inf"} 5009
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v3/sortitions/latest_and_last"} 647.9890660459985
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v3/sortitions/latest_and_last"} 5009
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.05"} 1
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.1"} 2
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.25"} 4
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="0.5"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="1"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="2.5"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="5"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="10"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/stacker_set/:reward_cycle",le="+Inf"} 5
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v3/stacker_set/:reward_cycle"} 0.936887071
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v3/stacker_set/:reward_cycle"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.005"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.01"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.025"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.05"} 0
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.1"} 5
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.25"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="0.5"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="1"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="2.5"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="5"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="10"} 11
+stacks_signer_node_rpc_call_latencies_histogram_bucket{path="/v3/tenures/fork_info/:start/:stop",le="+Inf"} 11
+stacks_signer_node_rpc_call_latencies_histogram_sum{path="/v3/tenures/fork_info/:start/:stop"} 1.0716222850000001
+stacks_signer_node_rpc_call_latencies_histogram_count{path="/v3/tenures/fork_info/:start/:stop"} 11
+# HELP stacks_signer_nonce The current nonce of the signer
+# TYPE stacks_signer_nonce gauge
+stacks_signer_nonce 0
+# HELP stacks_signer_stacks_node_height The current height of the Stacks node
+# TYPE stacks_signer_stacks_node_height gauge
+stacks_signer_stacks_node_height 9480927
+# HELP stacks_signer_stx_balance The current STX balance of the signer
+# TYPE stacks_signer_stx_balance gauge
+stacks_signer_stx_balance 0

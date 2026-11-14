@@ -30,9 +30,10 @@ func init() {
 }
 
 const (
-	logKeep  = 500
-	histLen  = 720 // 1 h at the 5 s chain poll
-	pollTime = 5 * time.Second
+	signerWindow = 120 // 10 min at the 5 s poll
+	logKeep      = 500
+	histLen      = 720 // 1 h at the 5 s chain poll
+	pollTime     = 5 * time.Second
 )
 
 func uiRun(c *Ctx, args []string) (int, error) {
@@ -147,6 +148,8 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 	client := &http.Client{Timeout: 3 * time.Second}
 	rpcPort := portSetting(c, "STACKS_CORE_RPC_PORT", 20443)
 	apiPort := portSetting(c, "STACKS_BLOCKCHAIN_API_PORT", 3999)
+	signerPort := portSetting(c, "SIGNER_METRICS_PORT", 9154)
+	withSigner := slices.Contains(List(c.Value("COMPOSE_PROFILES")), "signer")
 	signers := map[int64]int{}
 	t := time.NewTicker(pollTime)
 	defer t.Stop()
@@ -157,6 +160,9 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 			ci := fetchChain(client, endpoint(svcs, "stacks-blockchain", rpcPort),
 				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers)
 			p.Send(chainMsg{ci, time.Now()})
+			if withSigner {
+				p.Send(signerMsg{fetchSigner(client, endpoint(svcs, "stacks-signer", signerPort)), time.Now()})
+			}
 			p.Send(hostMsg(collectHost(c)))
 		}
 		select {
@@ -265,6 +271,10 @@ type (
 		ci chainInfo
 		at time.Time
 	}
+	signerMsg struct {
+		si signerInfo
+		at time.Time
+	}
 	hostMsg   hostInfo
 	clockMsg  time.Time
 	actionMsg struct {
@@ -287,19 +297,24 @@ type uiModel struct {
 	host     hostInfo
 	cpuHist  *ring
 	tipHist  *ring
-	logSvc   string
-	lines    []string
-	warns    []string // warning and error lines, kept apart so the chatty INFO lines don't push them out
-	warnOnly bool
-	logView  bool   // the full-screen log view; logs are followed only while it is open
-	confirm  string // the action awaiting y/N
-	help     bool
-	status   string // result of the last action
+	signer   signerInfo
+	signerAt time.Time
+	// The signer's cumulative counters at each poll, for the last 10 minutes' rates
+	sigAcc, sigRej, sigProp *ring
+	logSvc                  string
+	lines                   []string
+	warns                   []string // warning and error lines, kept apart so the chatty INFO lines don't push them out
+	warnOnly                bool
+	logView                 bool   // the full-screen log view; logs are followed only while it is open
+	confirm                 string // the action awaiting y/N
+	help                    bool
+	status                  string // result of the last action
 }
 
 func newUIModel(c *Ctx, self string) *uiModel {
 	return &uiModel{c: c, self: self, now: time.Now(), use: map[string]*resUse{},
-		cpuHist: newRing(histLen), tipHist: newRing(histLen), logSvc: "stacks-blockchain"}
+		cpuHist: newRing(histLen), tipHist: newRing(histLen),
+		sigAcc: newRing(signerWindow), sigRej: newRing(signerWindow), sigProp: newRing(signerWindow), logSvc: "stacks-blockchain"}
 }
 
 func tick() tea.Cmd {
@@ -407,6 +422,13 @@ func (m *uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.ci.Tip > 0 {
 			m.tipHist.add(float64(msg.ci.Tip))
+		}
+	case signerMsg:
+		m.signer, m.signerAt = msg.si, msg.at
+		if msg.si.Err == "" {
+			m.sigAcc.add(msg.si.Accepted)
+			m.sigRej.add(msg.si.Rejected)
+			m.sigProp.add(msg.si.Proposals)
 		}
 	case hostMsg:
 		m.host = hostInfo(msg)
@@ -583,6 +605,12 @@ func (m *uiModel) render() string {
 	top = append(top, rule("POX", w))
 	for _, l := range m.poxLines() {
 		top = append(top, " "+l)
+	}
+	if m.withSigner() {
+		top = append(top, rule("SIGNER", w))
+		for _, l := range m.signerLines() {
+			top = append(top, " "+l)
+		}
 	}
 	// Problems come last, so the panels above stay put as the list grows into the free rows; when it
 	// doesn't fit, its last line says how many more there are
@@ -836,6 +864,7 @@ func (m *uiModel) problems() []problem {
 	if ci.NodeErr == "" && ci.PeersIn+ci.PeersOut == 0 {
 		add(lvBad, "the node has no peers")
 	}
+	ps = append(ps, m.signerProblems(running["stacks-signer"])...)
 	if len(ps) == 0 {
 		return []problem{{"none", lvOK}}
 	}
@@ -913,4 +942,92 @@ func (a *actionCmd) Run() error {
 	fmt.Fprint(a.out, "\nPress Enter to return to the dashboard.")
 	bufio.NewReader(a.in).ReadString('\n')
 	return err
+}
+
+func (m *uiModel) withSigner() bool {
+	return slices.Contains(List(m.c.Value("COMPOSE_PROFILES")), "signer")
+}
+
+// window is the change of a cumulative counter over the samples kept (at most 10 min).
+func window(r *ring) (float64, time.Duration) {
+	v := r.values()
+	if len(v) < 2 {
+		return 0, 0
+	}
+	return v[len(v)-1] - v[0], time.Duration(len(v)-1) * pollTime
+}
+
+// signerLines: the signer's view of the node, its cycle, and the block responses it sent (refactor/13
+// T10). Whether it is registered in the cycle's signer set isn't shown: that needs its public key.
+func (m *uiModel) signerLines() []string {
+	si := m.signer
+	switch {
+	case m.signerAt.IsZero():
+		return []string{stDim.Render("waiting for the first poll…")}
+	case si.Err != "":
+		return []string{"metrics " + stBad.Render(si.Err)}
+	}
+	node := fmt.Sprintf("node    height %s", commas(si.NodeHeight))
+	if m.chain.Tip > 0 {
+		lag := m.chain.Tip - si.NodeHeight
+		lv := lvOK
+		if lag > signerMaxLag {
+			lv = lvWarn
+		}
+		node += "  " + level("lag "+commas(lag), lv)
+	}
+	node += fmt.Sprintf(" · cycle %d", si.Cycle)
+	total := si.Accepted + si.Rejected
+	share := 0.0
+	if total > 0 {
+		share = 100 * si.Rejected / total
+	}
+	l := []string{node, fmt.Sprintf("blocks  %s accepted · %s rejected (%.1f%%)", commas(int64(si.Accepted)), commas(int64(si.Rejected)), share)}
+	acc, span := window(m.sigAcc)
+	rej, _ := window(m.sigRej)
+	recent := ""
+	if span > 0 {
+		recent = fmt.Sprintf("last %s +%.0f accepted, +%.0f rejected", shortDur(span), acc, rej)
+	}
+	if si.LatCount > 0 {
+		if recent != "" {
+			recent += " · "
+		}
+		recent += fmt.Sprintf("avg response %.0f ms", si.LatencySum/si.LatCount)
+	}
+	if recent != "" {
+		l = append(l, recent)
+	}
+	return l
+}
+
+// Thresholds of the StacksSignerBehindNode and StacksSignerRejecting alerts (conf/monitoring/rules)
+const (
+	signerMaxLag     = 5
+	signerMinSample  = 10 // responses in the window before a rejection share means anything
+	signerRejectRate = 0.5
+)
+
+func (m *uiModel) signerProblems(running bool) []problem {
+	if !m.withSigner() || m.signerAt.IsZero() || !running {
+		return nil
+	}
+	si := m.signer
+	if si.Err != "" {
+		return []problem{{"the signer's metrics don't answer: " + si.Err, lvBad}}
+	}
+	var ps []problem
+	if lag := m.chain.Tip - si.NodeHeight; m.chain.Tip > 0 && lag > signerMaxLag {
+		ps = append(ps, problem{fmt.Sprintf("the signer is %s blocks behind the node", commas(lag)), lvWarn})
+	}
+	acc, span := window(m.sigAcc)
+	rej, _ := window(m.sigRej)
+	prop, _ := window(m.sigProp)
+	switch {
+	case acc+rej >= signerMinSample && rej/(acc+rej) > signerRejectRate:
+		ps = append(ps, problem{fmt.Sprintf("the signer rejected %.0f%% of %.0f blocks in the last %s", 100*rej/(acc+rej), acc+rej, shortDur(span)), lvWarn})
+	case prop >= signerMinSample && acc+rej == 0:
+		ps = append(ps, problem{fmt.Sprintf("the signer received %.0f proposals in the last %s and answered none", prop, shortDur(span)), lvWarn})
+	}
+	return ps
 }

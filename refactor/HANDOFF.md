@@ -265,7 +265,7 @@ Designed with the owner one decision at a time (13 T6–T8, T4 revised) and buil
 
 **Follow-ups:**
 - **Go toolchain: done (owner, 2026-11-09).** Go 1.25 left upstream support with Go 1.27, so the three modules (`go 1.27.0`), their Dockerfiles, CI and the release workflow moved to Go 1.27 (1.27.3 at the time). All three images build (the seed image runs its tests in the build), and sbd/config vet and tests, compose-config (29/29), check-config and the harness (48/48, as before) pass.
-- Later (T8): Prometheus history, a signer panel, replay status, per-service restart, remote access, an alerts panel, mouse.
+- **Signer panel: done 2026-11-13 (T10).** Tested with the owner's dry-run signer's real `/metrics` (`tools/sbd/testdata/signer-metrics.txt`). Dropped: alerts panel (PROBLEMS covers it), replay status. Still parked: Prometheus history, per-service restart, remote access, mouse.
 
 ## Phase 5: soak (started 2026-11-03, in progress)
 

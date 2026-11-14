@@ -286,17 +286,22 @@ type poxInfo struct {
 	} `json:"next_cycle"`
 }
 
+// getErrShort shortens an HTTP client error to its cause: "connection refused", "timeout".
+func getErrShort(err error) string {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return "timeout"
+	}
+	msg := err.Error()
+	return msg[strings.LastIndex(msg, ": ")+2:]
+}
+
 // getJSON fetches url into v. Its errors are short enough for the chain panel: "connection refused",
 // "timeout", "503 Service Unavailable".
 func getJSON(client *http.Client, url string, v any) error {
 	resp, err := client.Get(url)
 	if err != nil {
-		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() {
-			return errors.New("timeout")
-		}
-		msg := err.Error()
-		return errors.New(msg[strings.LastIndex(msg, ": ")+2:])
+		return errors.New(getErrShort(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -619,4 +624,64 @@ func rate(b float64) string {
 		return fmt.Sprintf("%.0fk", b/1e3)
 	}
 	return fmt.Sprintf("%.0f", b)
+}
+
+// signerInfo is one poll of the signer's /metrics (refactor/13 T10: the signer panel).
+type signerInfo struct {
+	Err                  string
+	NodeHeight, Cycle    int64
+	Accepted, Rejected   float64 // block responses sent, cumulative
+	Proposals            float64
+	LatencySum, LatCount float64 // block response latency, ms
+}
+
+// parseMetrics reads Prometheus text format into name{labels} -> value; comments and bad lines are skipped.
+func parseMetrics(r io.Reader) map[string]float64 {
+	m := map[string]float64{}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		i := strings.LastIndexByte(line, ' ')
+		if i < 0 {
+			continue
+		}
+		if v, err := strconv.ParseFloat(line[i+1:], 64); err == nil {
+			m[line[:i]] = v
+		}
+	}
+	return m
+}
+
+func fetchSigner(client *http.Client, url string) signerInfo {
+	var si signerInfo
+	if url == "" {
+		si.Err = "not reachable"
+		return si
+	}
+	resp, err := client.Get(url + "/metrics")
+	if err != nil {
+		si.Err = getErrShort(err)
+		return si
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		si.Err = resp.Status
+		return si
+	}
+	m := parseMetrics(io.LimitReader(resp.Body, 4<<20))
+	si.NodeHeight = int64(m["stacks_signer_stacks_node_height"])
+	si.Cycle = int64(m["stacks_signer_current_reward_cycle"])
+	si.Accepted = m[`stacks_signer_block_responses_sent{response_type="accepted"}`]
+	si.Rejected = m[`stacks_signer_block_responses_sent{response_type="rejected"}`]
+	si.Proposals = m["stacks_signer_block_proposals_received"]
+	si.LatencySum = m["stacks_signer_block_response_latencies_histogram_sum"]
+	si.LatCount = m["stacks_signer_block_response_latencies_histogram_count"]
+	if si.NodeHeight == 0 && si.Cycle == 0 && si.Proposals == 0 {
+		si.Err = "no signer metrics at " + url
+	}
+	return si
 }

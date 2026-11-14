@@ -89,9 +89,14 @@ work on the host itself, and other machines are refused.
 - **PoX:** the stacking cycle and phase, when the next cycle starts, STX stacked, and how many
   signatures the latest block carries out of the cycle's signers (a count, not signing weight: blocks
   need 70% of the weight, and the API doesn't say who signed).
+- **Signer** (with the signer profile): the node height and reward cycle the signer sees, the blocks it
+  accepted and rejected, the last 10 minutes of them, and its average response time, from its own
+  `/metrics`. Whether it is registered in the cycle's signer set isn't shown.
 - **Problems** (last, so it can grow into the free rows): what needs a look, judged from state, not log messages: a container down, unhealthy
   or just restarted, the node or API not answering, no new block for 5 minutes, the API more than 15
-  blocks behind the node (it isn't receiving blocks), no Bitcoin block for 2 hours, no peers.
+  blocks behind the node (it isn't receiving blocks), no Bitcoin block for 2 hours, no peers; with a
+  signer, its metrics not answering, more than 5 blocks behind the node, more than half of its recent
+  responses rejections, or proposals with no responses.
 - **Logs:** `l` opens a full-screen log of one service (`l` for the next, `w` for warnings and errors
   only, Esc to go back). Logs aren't on the main screen: the node and API log constantly, mostly noise.
 
