@@ -33,6 +33,13 @@ $ netstat -anl | grep 3999
 tcp46      0      0  *.3999                 *.*                    LISTEN
 ```
 
+## HTTPS works from outside but not from your own network
+
+With `PROXY_DOMAIN`, the name points at your public IP. Many routers don't loop traffic from the LAN back
+to their own public address (NAT loopback, or "hairpin"), at least not for every port, so the name times
+out from inside while the internet reaches it fine. Test from outside (a phone off Wi-Fi). For LAN access,
+resolve the name to the host's LAN address in your local DNS, or enable NAT loopback on the router.
+
 ## Containers not starting (hanging on start)
 
 Occasionally, docker can get **stuck** and not allow new containers to start. If this happens, simply restart your docker daemon and try again.
