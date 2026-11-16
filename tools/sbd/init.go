@@ -441,7 +441,7 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 	if hasData(dataDir(run, "node")) {
 		bootstrap = strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "A "+net+" chainstate exists. Keep it, or delete it and seed from the Hiro archive / resync from genesis (keep, seed, resync)", "keep"))
 	} else {
-		bootstrap = strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "No "+net+" chainstate yet. Seed from the Hiro archive (hours) or sync from genesis (weeks on mainnet) (seed, genesis)", "seed"))
+		bootstrap = strings.ToLower(st.answer(p, "SBD_INIT_BOOTSTRAP", "No "+net+" chainstate yet. Seed from the Hiro archive, or sync from genesis (much slower) (seed, genesis)", "seed"))
 	}
 	switch bootstrap {
 	case "keep", "seed", "resync", "genesis":
@@ -452,7 +452,8 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 	// the choice above
 	now := false
 	if bootstrap == "seed" || bootstrap == "resync" {
-		what := "Run the seed now? It downloads about 360 GB (mainnet) and takes a few hours"
+		// Sizes and times change with the chain: the seed job prints the snapshot's before downloading
+		what := "Run the seed now? It shows the snapshot, its size and the free space before downloading"
 		if bootstrap == "resync" {
 			what = "Delete this network's data now (a resync from genesis follows on start)?"
 		}
