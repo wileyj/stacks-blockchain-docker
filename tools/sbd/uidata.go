@@ -566,6 +566,25 @@ func sparkline(vals []float64, width int) string {
 	return b.String()
 }
 
+// blockBuckets turns tip-height samples into blocks per bucket of `per` samples, complete buckets only
+// (a partial one would read as a slowdown). Blocks arrive every ~10 s (refactor/15: median 9.7 s), so
+// buckets of 2.5 min hold 10-15 of them, and a stall (4 min or more on the soak) empties at least one.
+func blockBuckets(tips []float64, per int) []float64 {
+	var b []float64
+	for i := 0; i+per < len(tips); i += per {
+		b = append(b, max(tips[i+per]-tips[i], 0))
+	}
+	return b
+}
+
+// sparkline0 is sparkline scaled from 0, so an empty bar always means none.
+func sparkline0(vals []float64, width int) string {
+	if len(vals) == 0 {
+		return ""
+	}
+	return sparkline(append([]float64{0}, vals...), width+1)[len("▁"):]
+}
+
 func commas(n int64) string {
 	s := strconv.FormatInt(n, 10)
 	neg := strings.HasPrefix(s, "-")

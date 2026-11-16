@@ -563,3 +563,25 @@ func TestSignerProblems(t *testing.T) {
 		t.Errorf("metrics down: %s", got)
 	}
 }
+
+func TestBlockBuckets(t *testing.T) {
+	// 10 min of samples every 5 s: 2 blocks a minute, then a 5-minute stall (60 samples each half)
+	var tips []float64
+	h := 100.0
+	for i := range 120 {
+		if i < 60 && i%6 == 0 {
+			h++
+		}
+		tips = append(tips, h)
+	}
+	b := blockBuckets(tips, 30)
+	if fmt.Sprint(b) != "[5 4 0]" {
+		t.Errorf("buckets %v", b)
+	}
+	if got := sparkline0(b, 24); got != "█▆▁" {
+		t.Errorf("sparkline0 %q", got)
+	}
+	if blockBuckets(tips[:30], 30) != nil {
+		t.Error("an incomplete bucket is drawn")
+	}
+}
