@@ -51,3 +51,5 @@ conf/monitoring/prometheus.yml
 conf/monitoring/grafana/provisioning/alerting/stacks.json
 conf/nginx/proxy.conf
 conf/proxy/Caddyfile
+## sbd built by scripts/build-sbd.sh
+/sbd

@@ -42,9 +42,14 @@ plus any of `signer`,
 `proxy` (Caddy) and `monitoring` (Prometheus and Grafana). A signer also needs its private key in
 `.env` (`SIGNER_PRIVATE_KEY`, or `TESTNET_SIGNER_PRIVATE_KEY` on testnet).
 
-Get `sbd` from the repo's [GitHub Releases](https://github.com/stx-labs/stacks-blockchain-docker/releases)
-(Linux x86-64 for now), run it as an image, or build it from source; see
-[Getting `sbd`](./docs/usage.md#plain-docker-compose-and-sbd).
+`sbd` is optional. Build it from this checkout with Go or, without Go, with Docker:
+
+```bash
+./scripts/build-sbd.sh     # writes ./sbd; then run ./sbd, or: sudo install -m 0755 sbd /usr/local/bin/sbd
+```
+
+Or download it from the [GitHub Releases](https://github.com/stx-labs/stacks-blockchain-docker/releases)
+(Linux x86-64), or run it as an image; see [Getting `sbd`](./docs/usage.md#getting-sbd).
 
 ## Seed from the Hiro archive instead of syncing from genesis
 

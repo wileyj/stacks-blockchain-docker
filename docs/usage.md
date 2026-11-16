@@ -36,7 +36,8 @@ both: neither keeps state the other doesn't see.
 when there is none, and refuses `seed`, `reset`, `bns` and `db upgrade` while the stack runs. The jobs
 refuse on their own too, so plain Compose is just as safe.
 
-Getting `sbd`:
+### Getting `sbd`
+
 - **Release binary** (Linux x86-64 for now): download `sbd-<version>-linux-amd64` from the repo's
   GitHub Releases, check it, and put it on your `PATH`:
   `sha256sum -c --ignore-missing SHA256SUMS`, and (with the GitHub CLI) its build provenance:
@@ -47,8 +48,9 @@ Getting `sbd`:
   socket and the checkout mounted at the same path, so the paths compose uses resolve on the host:
   `docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":"$PWD" -w "$PWD" ghcr.io/<owner>/sbd status`
   (provenance: `gh attestation verify oci://ghcr.io/<owner>/sbd:<version> --repo <owner>/stacks-blockchain-docker`)
-- **From source** with Go 1.27, on any OS: `cd tools/sbd && go build -o sbd .`, or without Go:
-  `docker run --rm -v "$PWD":/src -w /src/tools/sbd golang:1.27 go build -o sbd .`.
+- **From source**, on any OS: `./scripts/build-sbd.sh` writes `./sbd`. It uses Go 1.27 or newer if
+  installed, otherwise Docker (the `golang:1.27` image), and builds a static binary with the version
+  from git, the same way as the releases.
 
 ## Services
 
