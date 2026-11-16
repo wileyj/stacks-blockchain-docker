@@ -615,6 +615,19 @@ func stx(ustx uint64) string {
 	return commas(int64(v)) + " STX"
 }
 
+// ofIEC prints a part of a whole in the whole's binary unit: 439.7/491.9 GiB.
+func ofIEC(part, whole uint64) string {
+	v, i := float64(whole), -1
+	for v >= 1024 && i < 4 {
+		v /= 1024
+		i++
+	}
+	if i < 0 {
+		return fmt.Sprintf("%d/%d B", part, whole)
+	}
+	return fmt.Sprintf("%.1f/%.1f %ciB", float64(part)/math.Pow(1024, float64(i+1)), v, "KMGTP"[i])
+}
+
 // rate prints bytes per second compactly (2.4M, 812k, 0).
 func rate(b float64) string {
 	switch {

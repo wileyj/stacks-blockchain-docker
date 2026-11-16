@@ -238,6 +238,9 @@ func TestFormat(t *testing.T) {
 			t.Errorf("shortDur(%v) = %q", d, got)
 		}
 	}
+	if ofIEC(4397<<30/10, 4919<<30/10) != "439.7/491.9 GiB" || ofIEC(512, 900) != "512/900 B" {
+		t.Errorf("ofIEC: %q", ofIEC(4397<<30/10, 4919<<30/10))
+	}
 	if bytesIEC(3<<30+100<<20) != "3.1 GiB" || bytesIEC(512) != "512 B" || rate(2.4e6) != "2.4M" || rate(812e3) != "812k" {
 		t.Error("sizes")
 	}
@@ -307,7 +310,7 @@ func TestRenderFits(t *testing.T) {
 	m.w, m.h = 80, 24
 	out := m.render()
 	for _, want := range []string{"sbd ui · mainnet · node,api,monitoring", "stacks-blockchain ", "healthy", "3.0 GiB", "42.0M/118.0M",
-		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "disk    1.3 TiB free of 2.0 TiB", "q quit",
+		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "disk    1.3/2.0 TiB free", "q quit",
 		"── PROBLEMS", "stacks-signer exited with code 1", "cycle   147, reward phase · 148 starts in 1,634 blocks (~11d8h)",
 		"stacked 513.9M STX · 148 so far 453.1M STX · minimum 50,000 STX", "signed  27 signatures on block 9,449,931 (35 signers in cycle 147)"} {
 		if !strings.Contains(out, want) {

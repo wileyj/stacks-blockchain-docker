@@ -795,7 +795,7 @@ func (m *uiModel) hostLines() []string {
 	var l []string
 	// Free space on the filesystem(s) holding the chainstate and the API database (not their size)
 	for _, d := range h.Disks {
-		l = append(l, fmt.Sprintf("%-7s %s free of %s", d.Label, bytesIEC(d.Free), bytesIEC(d.Total)))
+		l = append(l, fmt.Sprintf("%-7s %s free", d.Label, ofIEC(d.Free, d.Total)))
 	}
 	if h.Load != "" {
 		l = append(l, "load    "+h.Load)
