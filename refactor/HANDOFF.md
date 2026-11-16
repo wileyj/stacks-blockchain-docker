@@ -353,5 +353,6 @@ Owner: now, not after a release ("it's a small set of users"). Removed `manage.s
 
 ## Next (owner, 2026-11-14)
 
-1. Run A step 3 (core 4.0.7, since 2026-11-14 00:59 UTC): compare its stalls with the 4.0.4 periods after a day or two, then stop Run A and free its data (about 1.2 TB on the LV) and the stall tracker.
+1. ~~Run A step 3~~ **Done 2026-11-16:** 4.0.7 had 5.3 stalls/day (as on 4.0.4 with the Hiro seed only), none over 12 min in 63 h; 11 of 14 with outbound peers down to 3 or fewer (15 "Phase 5"). Run A is stopped and **its data deleted** (owner, 2026-11-16; the LV went from 1.7 TB to 99 GB used); its results, logs, scripts and overrides are in `/stacks/temp/sbd-soak-results/run-a/`. The functional tests run on new testnet VMs instead (150 GB LV each).
+1b. **Functional tests by the owner before the PR:** `refactor/16-user-testing.md`.
 2. Then a follow-up PR from `chore/refactor` (HANDOFF and docs commits since #9, plus Run A's results), and a release (`v0.1.0-rc3` or `v0.1.0`).

@@ -46,6 +46,7 @@ This folder documents everything the repository does today, so a later refactor 
 | 13 | [TUI plan](./13-tui-plan.md) | **Optional, new feature.** `sbd init` plus live dashboard as a client of the refactored core |
 | 14 | [Cross-platform architecture](./14-platform-and-architecture.md) | **Full-refactor design.** Compose-first + optional Go CLI + containerized jobs for Linux/Unix/macOS/Windows; plain-`docker compose` operation (§2.1, §11); removing the API dependency; seed/data-path redesign |
 | 15 | [Verification log](./15-verification-log.md) | How each previously unverified [U] item was resolved (2026-10-19): live Docker tests, upstream source at the pinned tags, Compose version tests |
+| 16 | [Functional tests](./16-user-testing.md) | The owner's hands-on passes before the next PR (2026-11-16), on throwaway testnet VMs: a new user cloning the repo, and an existing `manage.sh` user upgrading |
 
 ## Upstream issues incorporated
 
