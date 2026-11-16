@@ -796,13 +796,13 @@ func (m *uiModel) hostLines() []string {
 	var l []string
 	// Free space on the filesystem(s) holding the chainstate and the API database (not their size)
 	for _, d := range h.Disks {
-		l = append(l, fmt.Sprintf("%-7s %s free", d.Label, ofIEC(d.Free, d.Total)))
+		l = append(l, fmt.Sprintf("%-7s %s", d.Label, ofIEC(d.Free, d.Total, "free")))
 	}
 	if h.Load != "" {
 		l = append(l, "load    "+h.Load)
 	}
 	if h.MemTotal > 0 {
-		l = append(l, fmt.Sprintf("memory  %s used of %s", bytesIEC(h.MemTotal-h.MemAvail), bytesIEC(h.MemTotal)))
+		l = append(l, "memory  "+ofIEC(h.MemTotal-h.MemAvail, h.MemTotal, "used"))
 	}
 	cpu := m.cpuHist.values()
 	if len(cpu) > 0 {
