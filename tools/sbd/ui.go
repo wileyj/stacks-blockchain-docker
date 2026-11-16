@@ -793,12 +793,9 @@ func (m *uiModel) chainLines() []string {
 func (m *uiModel) hostLines() []string {
 	h := m.host
 	var l []string
-	if len(h.Disks) > 0 {
-		var parts []string
-		for _, d := range h.Disks {
-			parts = append(parts, d.Label+" "+bytesIEC(d.Free))
-		}
-		l = append(l, "free    "+strings.Join(parts, ", "))
+	// Free space on the filesystem(s) holding the chainstate and the API database (not their size)
+	for _, d := range h.Disks {
+		l = append(l, fmt.Sprintf("%-7s %s free of %s", d.Label, bytesIEC(d.Free), bytesIEC(d.Total)))
 	}
 	if h.Load != "" {
 		l = append(l, "load    "+h.Load)
@@ -906,6 +903,9 @@ func (m *uiModel) helpLines() []string {
 		"  e  export     sbd logs export (to exported-logs/)",
 		"  l  logs       full-screen log: l next service, w warnings only, esc back",
 		"  q  quit       the stack keeps running",
+		"",
+		"HOST disk: free space on the filesystem with the chainstate and the API",
+		"database (chain and db when they're on different ones), not their size.",
 		"",
 		stHead.Render("In a shell (not in the dashboard)"),
 		"",

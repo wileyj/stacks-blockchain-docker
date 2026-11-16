@@ -459,25 +459,27 @@ type hostInfo struct {
 	MemTotal, MemAvail uint64
 }
 
+// diskFree is one filesystem holding the data: "disk" when the chainstate and the API database share it,
+// else "chain" and "db".
 type diskFree struct {
-	Label string
-	Free  uint64
+	Label       string
+	Free, Total uint64
 }
 
 func collectHost(c *Ctx) hostInfo {
 	var h hostInfo
 	seen := map[string]int{}
-	for _, comp := range []struct{ key, label string }{{"node", "chainstate"}, {"api", "postgres"}} {
-		free, fsID, err := freeSpace(existingAncestor(dataDir(c, comp.key)))
+	for _, comp := range []struct{ key, label string }{{"node", "chain"}, {"api", "db"}} {
+		free, total, fsID, err := diskSpace(existingAncestor(dataDir(c, comp.key)))
 		if err != nil {
 			continue
 		}
 		if i, ok := seen[fsID]; ok {
-			h.Disks[i].Label = "data"
+			h.Disks[i].Label = "disk"
 			continue
 		}
 		seen[fsID] = len(h.Disks)
-		h.Disks = append(h.Disks, diskFree{comp.label, free})
+		h.Disks = append(h.Disks, diskFree{comp.label, free, total})
 	}
 	if b, err := os.ReadFile("/proc/loadavg"); err == nil {
 		h.Load = parseLoadavg(string(b))

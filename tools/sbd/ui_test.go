@@ -265,7 +265,7 @@ func uiFixture(t *testing.T) *uiModel {
 	m.chain = chainInfo{Tip: 9449931, Burn: 975206, PeersOut: 6, APITip: 9449931, BlockTime: now.Add(-12 * time.Second), BurnTime: now.Add(-28 * time.Minute),
 		Pox: pox, Signers: 35, Signatures: 27}
 	m.chainAt = now
-	m.host = hostInfo{Disks: []diskFree{{"data", 1300 << 30}}, Load: "1.80 1.50 1.20", MemTotal: 64 << 30, MemAvail: 30 << 30}
+	m.host = hostInfo{Disks: []diskFree{{"disk", 1300 << 30, 2000 << 30}}, Load: "1.80 1.50 1.20", MemTotal: 64 << 30, MemAvail: 30 << 30}
 	for i := range 20 {
 		m.cpuHist.add(float64(40 + i))
 		m.tipHist.add(float64(9449900 + i*2))
@@ -307,7 +307,7 @@ func TestRenderFits(t *testing.T) {
 	m.w, m.h = 80, 24
 	out := m.render()
 	for _, want := range []string{"sbd ui · mainnet · node,api,monitoring", "stacks-blockchain ", "healthy", "3.0 GiB", "42.0M/118.0M",
-		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "data 1.3 TiB", "q quit",
+		"9,449,931", "synced ✔ latest block 12s ago", "block 28m00s ago", "lag 0", "6 out, 0 in", "disk    1.3 TiB free of 2.0 TiB", "q quit",
 		"── PROBLEMS", "stacks-signer exited with code 1", "cycle   147, reward phase · 148 starts in 1,634 blocks (~11d8h)",
 		"stacked 513.9M STX · 148 so far 453.1M STX · minimum 50,000 STX", "signed  27 signatures on block 9,449,931 (35 signers in cycle 147)"} {
 		if !strings.Contains(out, want) {
