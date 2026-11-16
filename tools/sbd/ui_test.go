@@ -15,6 +15,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestParseStatsLine(t *testing.T) {
@@ -583,5 +584,27 @@ func TestBlockBuckets(t *testing.T) {
 	}
 	if blockBuckets(tips[:30], 30) != nil {
 		t.Error("an incomplete bucket is drawn")
+	}
+}
+
+// Both HOST graphs are the last hour in bars of 2.5 min and always the same width (owner, 2026-11-16)
+func TestHostGraphsAlign(t *testing.T) {
+	m := uiFixture(t)
+	m.cpuHist, m.tipHist = newRing(histLen), newRing(histLen)
+	for i := range 100 { // a little over 8 min: 3 complete bars
+		m.cpuHist.add(float64(40 + i%20))
+		m.tipHist.add(float64(1000 + i/2))
+	}
+	if got := len(meanBuckets(m.cpuHist.values(), blockBucket)); got != 3 {
+		t.Errorf("cpu bars %d", got)
+	}
+	var widths []int
+	for _, l := range m.hostLines() {
+		if f := strings.Fields(ansi.Strip(l)); len(f) > 1 && (f[0] == "cpu" || f[0] == "blocks") {
+			widths = append(widths, len([]rune(f[1])))
+		}
+	}
+	if len(widths) != 2 || widths[0] != graphWidth || widths[1] != graphWidth {
+		t.Errorf("graph widths %v, want both %d", widths, graphWidth)
 	}
 }

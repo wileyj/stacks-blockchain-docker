@@ -577,6 +577,29 @@ func blockBuckets(tips []float64, per int) []float64 {
 	return b
 }
 
+// meanBuckets averages samples per bucket of `per`, oldest first, complete buckets only (as blockBuckets,
+// so the two graphs' bars cover the same minutes).
+func meanBuckets(vals []float64, per int) []float64 {
+	var b []float64
+	for i := 0; i+per < len(vals); i += per {
+		sum := 0.0
+		for _, v := range vals[i : i+per] {
+			sum += v
+		}
+		b = append(b, sum/float64(per))
+	}
+	return b
+}
+
+// padLeft fills a graph narrower than width with dim dots on the left, so graphs of the same width
+// line up while their history fills in.
+func padLeft(graph string, width int) string {
+	if n := width - len([]rune(graph)); n > 0 {
+		return stDim.Render(strings.Repeat("·", n)) + graph
+	}
+	return graph
+}
+
 // sparkline0 is sparkline scaled from 0, so an empty bar always means none.
 func sparkline0(vals []float64, width int) string {
 	if len(vals) == 0 {

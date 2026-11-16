@@ -30,7 +30,8 @@ func init() {
 }
 
 const (
-	blockBucket  = 30  // 2.5 min at the 5 s poll: one bar of the blocks graph
+	blockBucket  = 30  // 2.5 min at the 5 s poll: one bar of the HOST graphs
+	graphWidth   = 24  // bars: the last hour (histLen / blockBucket)
 	signerWindow = 120 // 10 min at the 5 s poll
 	logKeep      = 500
 	histLen      = 720 // 1 h at the 5 s chain poll
@@ -821,11 +822,12 @@ func (m *uiModel) hostLines() []string {
 	}
 	cpu := m.cpuHist.values()
 	if len(cpu) > 0 {
-		l = append(l, fmt.Sprintf("cpu     %s %.0f%%", sparkline(cpu, 24), cpu[len(cpu)-1]))
+		// The last hour in 24 bars of 2.5 min (the average of each), like the blocks graph below
+		l = append(l, fmt.Sprintf("cpu     %s %.0f%%", padLeft(sparkline0(meanBuckets(cpu, blockBucket), graphWidth), graphWidth), cpu[len(cpu)-1]))
 	}
 	// Blocks per 2.5 min over the last hour (24 bars), and the last minute's rate
 	if tips := m.tipHist.values(); len(tips) > 12 {
-		bars := sparkline0(blockBuckets(tips, blockBucket), 24)
+		bars := padLeft(sparkline0(blockBuckets(tips, blockBucket), graphWidth), graphWidth)
 		l = append(l, fmt.Sprintf("blocks  %s %.0f/min", bars, tips[len(tips)-1]-tips[len(tips)-13]))
 	}
 	return l
@@ -925,7 +927,8 @@ func (m *uiModel) helpLines() []string {
 		"",
 		"HOST disk: free space on the filesystem with the chainstate and the API",
 		"database (chain and db when they're on different ones), not their size.",
-		"HOST blocks: new blocks per 2.5 min over the last hour; an empty bar is a stall.",
+		"HOST cpu and blocks: the last hour in bars of 2.5 min (node CPU averaged; new",
+		"blocks counted, so an empty bar is a stall); dots are minutes not seen yet.",
 		"",
 		stHead.Render("In a shell (not in the dashboard)"),
 		"",
