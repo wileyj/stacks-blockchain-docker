@@ -19,7 +19,7 @@ both: neither keeps state the other doesn't see.
 | Status | `docker compose --profile '*' ps --all` | `sbd status [--json]` (exit 0 = running, 1 = not) |
 | Follow the logs | `docker compose logs -f --tail 100` | `sbd logs` |
 | One service's logs | `docker compose logs -f --tail 100 <service>` | `sbd logs <service>` |
-| Export every container's log | `docker compose --profile '*' logs --no-color --timestamps <service> > exported-logs/<container>.log` | `sbd logs export` |
+| Export the logs (all containers, or the services named) | `docker compose --profile '*' logs --no-color --no-log-prefix --timestamps <service> \| gzip > exported-logs/<time>/<container>.log.gz`, then `ls -lh exported-logs/<time>` | `sbd logs export [service…] [--since 24h] [--dir DIR]` |
 | Pull the images pinned in `.env` | `docker compose pull --ignore-buildable` | `sbd pull` |
 | Update one service, the others keep running (see [Upgrades](./upgrade.md#one-service)) | set its version in `.env`, then `docker compose pull <service>`, `docker compose run --rm config`, `docker compose up -d --no-deps --force-recreate <service>` | `sbd update <node\|api\|signer\|proxy> [--version V]` |
 | Render `Config.toml`/`Signer.toml` (`up` does it too) | `docker compose run --rm config` | `sbd config render` |
@@ -124,8 +124,19 @@ Don't pass `-t` to `down`: it would override that.
 ## Logs
 
 `docker compose logs -f` (or `sbd logs`) follows every service; name one to follow only it.
-`sbd logs export` writes each container's full log to `./exported-logs/<container>.log`, overwriting the
-previous export.
+`sbd logs export` writes each container's full log, gzipped, to `./exported-logs/<UTC time>/<container>.log.gz`
+and lists the files with their sizes. Name services to export only those (`sbd logs export api`, or
+`node`, `signer`, `postgres`, `proxy`, or the full service name), `--since 24h` for recent lines only, and
+`--dir` to write elsewhere. Full logs can be several GB before compression; the checkout's own
+directory is used rather than `/tmp`, which is often in memory. In `sbd ui`, `e` asks first, and in the
+log view it exports the service shown.
+
+```bash
+# the same with plain Compose, for each service (docker compose ps lists them)
+mkdir -p exported-logs/<time>
+docker compose --profile '*' logs --no-color --no-log-prefix --timestamps <service> | gzip > exported-logs/<time>/<container>.log.gz
+ls -lh exported-logs/<time>
+```
 
 ## Delete this network's data
 

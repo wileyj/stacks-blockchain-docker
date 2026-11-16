@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,8 @@ type Step struct {
 	SetValue  string   `json:"set_value,omitempty"`  //
 	Docker    []string `json:"docker,omitempty"`     // docker <args>
 	Stdout    string   `json:"stdout,omitempty"`     // redirect docker's stdout to this file (relative to the project)
+	Gzip      bool     `json:"gzip,omitempty"`       // gzip the redirected output
+	List      string   `json:"list,omitempty"`       // list this directory's files and sizes (ls -lh)
 	Note      string   `json:"note,omitempty"`       // information for the user; changes nothing
 }
 
@@ -35,12 +38,16 @@ func (s Step) String() string {
 		return "cp sample.env .env"
 	case s.SetKey != "":
 		return fmt.Sprintf("edit .env: %s=%s", s.SetKey, shown(s.SetKey, s.SetValue))
+	case s.List != "":
+		return "ls -lh " + shellQuote(s.List)
 	}
 	parts := []string{"docker"}
 	for _, a := range s.Docker {
 		parts = append(parts, shellQuote(a))
 	}
-	if s.Stdout != "" {
+	if s.Stdout != "" && s.Gzip {
+		parts = append(parts, "|", "gzip", ">", shellQuote(s.Stdout))
+	} else if s.Stdout != "" {
 		parts = append(parts, ">", shellQuote(s.Stdout))
 	}
 	return strings.Join(parts, " ")
@@ -120,10 +127,14 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 				backedUp = true
 				fmt.Fprintf(os.Stderr, "sbd: .env: %s=%s%s\n", s.SetKey, shown(s.SetKey, s.SetValue), note)
 			}
+		case s.List != "":
+			if err := listFiles(projectPath(dir, s.List)); err != nil {
+				return 1, err
+			}
 		default:
 			out := io.Writer(os.Stdout)
 			if s.Stdout != "" {
-				path := filepath.Join(dir, s.Stdout)
+				path := projectPath(dir, s.Stdout)
 				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 					return 1, err
 				}
@@ -133,6 +144,11 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 				}
 				defer f.Close()
 				out = f
+				if s.Gzip {
+					zw := gzip.NewWriter(f)
+					defer zw.Close()
+					out = zw
+				}
 			}
 			code, err := d.Run(s.Docker, out)
 			if err != nil {
@@ -144,4 +160,29 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 		}
 	}
 	return 0, nil
+}
+
+// projectPath resolves a plan's path: relative ones are in the project dir.
+func projectPath(dir, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(dir, p)
+}
+
+// listFiles prints each file in dir with its size, and the total.
+func listFiles(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var total int64
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && !e.IsDir() {
+			total += info.Size()
+			fmt.Fprintf(os.Stderr, "sbd:   %-48s %s\n", e.Name(), bytesIEC(uint64(info.Size())))
+		}
+	}
+	fmt.Fprintf(os.Stderr, "sbd: %d files, %s in %s\n", len(entries), bytesIEC(uint64(total)), dir)
+	return nil
 }

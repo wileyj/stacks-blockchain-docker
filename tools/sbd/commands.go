@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Ctx is what a command sees: the project, its .env (nil when there is none yet; sample.env then
@@ -240,32 +243,67 @@ func logsPlan(c *Ctx, args []string) (Plan, error) {
 	return Plan{compose(append(a, services...)...)}, nil
 }
 
-// logsExportPlan writes each container's full log to exported-logs/<container>.log (refactor/11
-// §A.17). It lists the containers, so unlike the other plans it reads docker state.
+// serviceAliases are the short names commands accept for the main services.
+var serviceAliases = map[string]string{
+	"node": "stacks-blockchain", "api": "stacks-blockchain-api", "signer": "stacks-signer", "proxy": "proxy", "postgres": "postgres",
+}
+
+// now is the clock plans read (tests fix it).
+var now = time.Now
+
+// logsExportPlan writes containers' full logs, gzipped, to exported-logs/<UTC time>/<container>.log.gz
+// (or --dir), then lists them: every container, or the services named (owner, 2026-11-16). It lists
+// the containers, so unlike the other plans it reads docker state.
 func logsExportPlan(c *Ctx, args []string) (Plan, error) {
-	if len(args) > 0 {
-		return nil, usagef("logs export: unexpected argument %q", args[0])
+	fs := flag.NewFlagSet("logs export", flag.ContinueOnError)
+	dir := fs.String("dir", "", "")
+	since := fs.String("since", "", "")
+	names, err := parseFlags(fs, args)
+	if err != nil {
+		return nil, err
 	}
 	cs, err := containers(c.Docker)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(cs, func(i, j int) bool { return cs[i].Name < cs[j].Name })
+	have := map[string]bool{}
+	for _, ct := range cs {
+		have[ct.Service] = true
+	}
+	want := map[string]bool{}
+	for _, n := range names {
+		svc := n
+		if a, ok := serviceAliases[n]; ok {
+			svc = a
+		}
+		if !have[svc] {
+			return nil, usagef("logs export: no %q container (the project has: %s)", n, strings.Join(slices.Sorted(maps.Keys(have)), ", "))
+		}
+		want[svc] = true
+	}
+	if *dir == "" {
+		*dir = filepath.Join("exported-logs", now().UTC().Format("20060102T150405Z"))
+	}
 	var p Plan
 	seen := map[string]bool{}
 	for _, ct := range cs {
-		if seen[ct.Service] {
+		if seen[ct.Service] || (len(want) > 0 && !want[ct.Service]) {
 			continue
 		}
 		seen[ct.Service] = true
-		s := compose("--profile", "*", "logs", "--no-color", "--timestamps", ct.Service)
-		s.Stdout = "exported-logs/" + ct.Name + ".log"
+		a := []string{"--profile", "*", "logs", "--no-color", "--no-log-prefix", "--timestamps"}
+		if *since != "" {
+			a = append(a, "--since", *since)
+		}
+		s := compose(append(a, ct.Service)...)
+		s.Stdout, s.Gzip = filepath.Join(*dir, ct.Name+".log.gz"), true
 		p = append(p, s)
 	}
 	if len(p) == 0 {
 		return nil, errors.New("logs export: the project has no containers")
 	}
-	return p, nil
+	return append(p, Step{List: *dir}), nil
 }
 
 func configPlan(c *Ctx, args []string) (Plan, error) {
@@ -355,8 +393,8 @@ var Commands = []*Command{
 			return append(Plan{stopStep}, p...), nil
 		}},
 	{Name: "status", Usage: "status [--json]", Help: "Show the containers; exit 0 if running, 1 if not", Run: statusRun},
-	{Name: "logs", Aliases: []string{"log"}, Usage: "logs [service...] [--tail N] [--no-follow] | logs export",
-		Help: "Follow the logs, or write every container's log to exported-logs/", Plan: logsPlan},
+	{Name: "logs", Aliases: []string{"log"}, Usage: "logs [service...] [--tail N] [--no-follow] | logs export [service...] [--since 24h] [--dir DIR]",
+		Help: "Follow the logs, or export them gzipped to exported-logs/<time>/ (all containers, or those named)", Plan: logsPlan},
 	{Name: "pull", Aliases: []string{"upgrade"}, Usage: "pull", Help: "Pull the images pinned in .env (then sbd restart to use them)",
 		Plan: noArgs("pull", Plan{compose("pull", "--ignore-buildable")})},
 	{Name: "seed", Usage: "seed [seed job options, e.g. --dry-run, --chainstate F --pgdump F]",

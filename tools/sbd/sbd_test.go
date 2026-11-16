@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 const sampleEnv = `## comment kept
@@ -52,6 +53,10 @@ func (f *fakeDocker) Output(args []string) ([]byte, error) {
 		return []byte(f.inspect), nil
 	}
 	return nil, nil
+}
+
+func init() {
+	now = func() time.Time { return time.Date(2026, 11, 16, 18, 30, 0, 0, time.UTC) }
 }
 
 // project makes a repo checkout with sample.env and, unless env is "-", a .env.
@@ -103,8 +108,13 @@ func TestPlans(t *testing.T) {
 		{"logs", sampleEnv, []string{"logs"}, "docker compose logs -f --tail 100\n", 0},
 		{"logs service", sampleEnv, []string{"logs", "stacks-blockchain", "--tail", "10", "--no-follow"}, "docker compose logs --tail 10 stacks-blockchain\n", 0},
 		{"logs export", sampleEnv, []string{"logs", "export"},
-			"docker compose --profile '*' logs --no-color --timestamps stacks-blockchain > exported-logs/stacks-blockchain.log\n" +
-				"docker compose --profile '*' logs --no-color --timestamps config > exported-logs/stacks-blockchain-docker-config-1.log\n", 0},
+			"docker compose --profile '*' logs --no-color --no-log-prefix --timestamps stacks-blockchain | gzip > exported-logs/20261116T183000Z/stacks-blockchain.log.gz\n" +
+				"docker compose --profile '*' logs --no-color --no-log-prefix --timestamps config | gzip > exported-logs/20261116T183000Z/stacks-blockchain-docker-config-1.log.gz\n" +
+				"ls -lh exported-logs/20261116T183000Z\n", 0},
+		{"logs export one service, since, dir", sampleEnv, []string{"logs", "export", "node", "--since", "24h", "--dir", "/tmp/x"},
+			"docker compose --profile '*' logs --no-color --no-log-prefix --timestamps --since 24h stacks-blockchain | gzip > /tmp/x/stacks-blockchain.log.gz\n" +
+				"ls -lh /tmp/x\n", 0},
+		{"logs export unknown service", sampleEnv, []string{"logs", "export", "signer"}, "", 2},
 		{"pull", sampleEnv, []string{"pull"}, "docker compose pull --ignore-buildable\n", 0},
 		{"upgrade alias", sampleEnv, []string{"upgrade"}, "docker compose pull --ignore-buildable\n", 0},
 		{"seed", sampleEnv, []string{"seed"}, "docker compose run --rm seed\n", 0},
@@ -301,7 +311,8 @@ func TestPlansAreDocumented(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "conf", "mainnet"), 0o755) // a hand-edited config, so migrate has a step
 	os.WriteFile(filepath.Join(dir, "conf", "mainnet", "Config.toml"), []byte("[node]\n"), 0o644)
 	placeholders := strings.NewReplacer(
-		"--timestamps stacks-blockchain > exported-logs/stacks-blockchain.log", "--timestamps <service> > exported-logs/<container>.log",
+		"--timestamps stacks-blockchain | gzip > exported-logs/20261116T183000Z/stacks-blockchain.log.gz", "--timestamps <service> | gzip > exported-logs/<time>/<container>.log.gz",
+		"ls -lh exported-logs/20261116T183000Z", "ls -lh exported-logs/<time>",
 		"--tail 100 stacks-blockchain", "--tail 100 <service>",
 		"pull stacks-blockchain-api", "pull <service>", "--force-recreate stacks-blockchain-api", "--force-recreate <service>")
 	seen := map[string]bool{}

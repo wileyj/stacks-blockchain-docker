@@ -388,8 +388,23 @@ var confirmText = map[string]string{
 	"r": "Restart the stack? The node is offline until it's back. y/N",
 }
 
+// confirmPrompt is the y/N question before an action.
+func (m *uiModel) confirmPrompt(key string) string {
+	if key == "e" {
+		if m.logView {
+			return "Export the " + m.logSvc + " log, gzipped, to exported-logs/<time>/? y/N"
+		}
+		return "Export every container's full log, gzipped (can be several GB), to exported-logs/<time>/? y/N"
+	}
+	return confirmText[key]
+}
+
 func (m *uiModel) run(key string) tea.Cmd {
 	args := actions[key]
+	// In the log view, the export is of the service shown
+	if key == "e" && m.logView {
+		args = append(slices.Clone(args), m.logSvc)
+	}
 	a := &actionCmd{self: m.self, dir: m.c.Dir, args: args}
 	name := strings.Join(args, " ")
 	return tea.Exec(a, func(err error) tea.Msg { return actionMsg{name, err} })
@@ -480,9 +495,9 @@ func (m *uiModel) key(k string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?", "h":
 		m.help = true
-	case "x", "r":
+	case "x", "r", "e":
 		m.confirm = k
-	case "s", "p", "e":
+	case "s", "p":
 		return m, m.run(k)
 	case "w":
 		m.warnOnly = !m.warnOnly
@@ -633,7 +648,7 @@ func (m *uiModel) bottom(keys string, w int) []string {
 	var b []string
 	switch {
 	case m.confirm != "":
-		b = append(b, stWarn.Render(confirmText[m.confirm]))
+		b = append(b, stWarn.Render(m.confirmPrompt(m.confirm)))
 	case m.status != "" || m.svcErr != "":
 		s := m.status
 		if m.svcErr != "" {
@@ -676,7 +691,7 @@ func (m *uiModel) renderLogs(w, h int) string {
 		}
 	}
 	top := []string{rule("LOGS "+m.logSvc+filter, w)}
-	return m.screen(top, logs, "l next service  w warn+  esc back  q quit", w, h)
+	return m.screen(top, logs, "l next service  w warn+  e export  esc back  q quit", w, h)
 }
 
 // clip makes every line exactly w wide and keeps the first h lines.
@@ -903,7 +918,8 @@ func (m *uiModel) helpLines() []string {
 		"  x  stop       sbd stop (asks first; the node stops first)",
 		"  r  restart    sbd restart (asks first)",
 		"  p  pull       sbd pull (then restart to use the new images)",
-		"  e  export     sbd logs export (to exported-logs/)",
+		"  e  export     sbd logs export (asks first): every container's log, gzipped,",
+		"                to exported-logs/<time>/; in the log view, that service only",
 		"  l  logs       full-screen log: l next service, w warnings only, esc back",
 		"  q  quit       the stack keeps running",
 		"",
