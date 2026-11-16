@@ -223,7 +223,7 @@ func runInit(c *Ctx, p Prompter, answers map[string]string, start bool) (int, er
 		}
 		profiles = List(v)
 	} else {
-		if p.Confirm("Run a signer? (needs a registered signer key; see below)", slices.Contains(current, "signer")) {
+		if p.Confirm("Run a signer? Only for stackers who sign blocks with a signer key registered on chain (if yes, what it involves comes next)", slices.Contains(current, "signer")) {
 			profiles = append(profiles, "signer")
 		}
 		if p.Confirm("Serve the API to other machines through the proxy (HTTP on port 80; HTTPS is the next question)?", slices.Contains(current, "proxy")) {
