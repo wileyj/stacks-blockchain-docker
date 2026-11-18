@@ -123,7 +123,7 @@ func TestSyncStatus(t *testing.T) {
 
 func TestFetchChain(t *testing.T) {
 	now := time.Now().Unix()
-	stackerSetCalls := 0
+	stackerSetCalls, poxCalls := 0, 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/info":
@@ -135,6 +135,7 @@ func TestFetchChain(t *testing.T) {
 		case "/extended/v2/burn-blocks":
 			fmt.Fprintf(w, `{"results":[{"burn_block_time":%d}]}`, now-600)
 		case "/v2/pox":
+			poxCalls++
 			fmt.Fprint(w, `{"min_amount_ustx":50000000000,"current_cycle":{"id":147,"stacked_ustx":513912288333589},"next_cycle":{"id":148,"stacked_ustx":453050307071976,"blocks_until_prepare_phase":1534,"blocks_until_reward_phase":1634}}`)
 		case "/v3/stacker_set/147":
 			stackerSetCalls++
@@ -147,7 +148,7 @@ func TestFetchChain(t *testing.T) {
 	}))
 	defer srv.Close()
 	signers := map[int64]int{}
-	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers)
+	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, true)
 	if ci.NodeErr != "" || ci.APIErr != "" || ci.Tip != 9449931 || ci.Burn != 975206 || ci.PeersOut != 3 ||
 		ci.APITip != 9449930 || ci.BlockTime.Unix() != now-12 || ci.BurnTime.Unix() != now-600 || ci.RefSet {
 		t.Fatalf("got %+v", ci)
@@ -155,18 +156,23 @@ func TestFetchChain(t *testing.T) {
 	if ci.Pox == nil || ci.Pox.Current.ID != 147 || ci.Pox.Next.UntilReward != 1634 || ci.Signers != 3 || ci.Signatures != 27 {
 		t.Fatalf("pox/signers: %+v %+v", ci.Pox, ci)
 	}
+	// While the node is behind, PoX isn't asked for: it would log an ERRO per request
+	poxBefore := poxCalls
+	if ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, false); ci.Pox != nil || !ci.PoxSkipped || poxCalls != poxBefore || ci.Tip != 9449931 {
+		t.Errorf("behind: pox %v skipped %v calls %d->%d", ci.Pox, ci.PoxSkipped, poxBefore, poxCalls)
+	}
 	// The signer set is fetched once per cycle
-	fetchChain(srv.Client(), srv.URL, srv.URL, "", signers)
+	fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, true)
 	if stackerSetCalls != 1 {
 		t.Errorf("stacker set fetched %d times", stackerSetCalls)
 	}
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
-	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "", signers)
+	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "", signers, true)
 	if ci.NodeErr != "connection refused" || ci.APIErr != "404 Not Found" || ci.Pox != nil || ci.Signatures != -1 {
 		t.Errorf("errors: node %q, api %q", ci.NodeErr, ci.APIErr)
 	}
-	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/", signers)
+	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/", signers, true)
 	if ci.NodeErr != "not reachable" || !ci.RefSet || ci.RefTip != 9449931 {
 		t.Fatalf("without the node, with a reference: %+v", ci)
 	}
@@ -446,11 +452,31 @@ func TestProblems(t *testing.T) {
 	m.svcs[2].Started = m.now.Add(-2 * time.Minute)
 	got := texts()
 	for _, want := range []string{"the node has no peers", "stacks-blockchain restarted 2m00s ago (1 restarts)", "behind: latest block 20m00s old",
-		"the API is 120 blocks behind the node", "no new Bitcoin block for 3h00m"} {
+		"the API is 120 blocks behind the node"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lacks %q: %s", want, got)
 		}
 	}
+	// A catch-up isn't a Bitcoin problem: the burn check only applies at the tip
+	m2 := uiFixture(t)
+	m2.svcs = m2.svcs[:5]
+	m2.chain.BlockTime, m2.chain.BurnTime = m2.now.Add(-30*24*time.Hour), m2.now.Add(-30*24*time.Hour)
+	var got2 []string
+	for _, p := range m2.problems() {
+		got2 = append(got2, p.text)
+	}
+	if got := strings.Join(got2, " | "); strings.Contains(got, "Bitcoin") || !strings.Contains(got, "behind") {
+		t.Errorf("catching up: %s", got)
+	}
+	if strings.Contains(got, "Bitcoin") {
+		t.Errorf("behind, so no Bitcoin check: %s", got)
+	}
+	// At the tip, a Bitcoin chain stalled for 3 h is a problem
+	m.chain.BlockTime = m.now.Add(-10 * time.Second)
+	if got := texts(); !strings.Contains(got, "no new Bitcoin block for 3h00m") {
+		t.Errorf("at the tip, stalled Bitcoin: %s", got)
+	}
+	m.chain.BlockTime = m.now.Add(-20 * time.Minute)
 	if !strings.HasPrefix(got, "the node has no peers") {
 		t.Errorf("errors don't come first: %s", got)
 	}

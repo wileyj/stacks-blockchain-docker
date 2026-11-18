@@ -153,6 +153,7 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 	signerPort := portSetting(c, "SIGNER_METRICS_PORT", 9154)
 	withSigner := slices.Contains(List(c.Value("COMPOSE_PROFILES")), "signer")
 	signers := map[int64]int{}
+	synced := false // from the previous poll: PoX is asked for only then (fetchChain)
 	t := time.NewTicker(pollTime)
 	defer t.Stop()
 	for full := true; ; {
@@ -160,7 +161,9 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 		p.Send(svcMsg{svcs, err})
 		if full {
 			ci := fetchChain(client, endpoint(svcs, "stacks-blockchain", rpcPort),
-				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers)
+				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers, synced)
+			_, lv := syncStatus(ci, time.Now())
+			synced = lv == lvOK
 			p.Send(chainMsg{ci, time.Now()})
 			if withSigner {
 				p.Send(signerMsg{fetchSigner(client, endpoint(svcs, "stacks-signer", signerPort)), time.Now()})
@@ -780,7 +783,7 @@ func (m *uiModel) chainLines() []string {
 		if !ci.BurnTime.IsZero() {
 			age := m.now.Sub(ci.BurnTime)
 			blv := lvOK
-			if age > burnStaleAge {
+			if _, slv := syncStatus(ci, m.now); slv == lvOK && age > burnStaleAge {
 				blv = lvWarn
 			}
 			burn += "  " + level("block "+shortDur(max(age, 0))+" ago", blv)
@@ -875,7 +878,8 @@ func (m *uiModel) problems() []problem {
 			add(lvWarn, "the API is %s blocks behind the node: is it receiving blocks?", commas(lag))
 		}
 	}
-	if !ci.BurnTime.IsZero() && m.now.Sub(ci.BurnTime) > burnStaleAge {
+	// Only at the tip: while catching up, the API's newest Bitcoin block is an old one by nature
+	if _, lv := syncStatus(ci, m.now); lv == lvOK && !ci.BurnTime.IsZero() && m.now.Sub(ci.BurnTime) > burnStaleAge {
 		add(lvWarn, "no new Bitcoin block for %s: check the Bitcoin peer (BTC_HOST)", shortDur(m.now.Sub(ci.BurnTime)))
 	}
 	if ci.NodeErr == "" && ci.PeersIn+ci.PeersOut == 0 {
@@ -894,6 +898,9 @@ func (m *uiModel) problems() []problem {
 func (m *uiModel) poxLines() []string {
 	ci := m.chain
 	if ci.Pox == nil {
+		if ci.PoxSkipped {
+			return []string{stDim.Render("waiting until the node is synced (it can't answer for blocks it hasn't reached)")}
+		}
 		return []string{stDim.Render("no PoX data from the node yet")}
 	}
 	p := ci.Pox

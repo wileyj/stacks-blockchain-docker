@@ -269,6 +269,7 @@ type chainInfo struct {
 	Pox               *poxInfo // nil when the node didn't answer /v2/pox
 	Signers           int      // signers in the current cycle's set; 0 = unknown
 	Signatures        int      // signatures on the API's latest block; -1 = unknown
+	PoxSkipped        bool     // not asked: the node is behind (see fetchChain)
 }
 
 // poxInfo is the part of the node's /v2/pox the dashboard shows.
@@ -313,8 +314,11 @@ func getJSON(client *http.Client, url string, v any) error {
 // fetchChain polls the node, the API and the reference in parallel. An empty URL means the service
 // isn't reachable from here (not running, or its port not published). signers caches the size of
 // each cycle's signer set; only the node's goroutine uses it.
-func fetchChain(client *http.Client, node, api, ref string, signers map[int64]int) chainInfo {
-	ci := chainInfo{Signatures: -1}
+//
+// withPox is false while the node is behind: asked about a reward cycle beyond the Bitcoin height it has
+// reached, the node logs an ERRO for every request (found 2026-11-18: one per poll during a testnet sync).
+func fetchChain(client *http.Client, node, api, ref string, signers map[int64]int, withPox bool) chainInfo {
+	ci := chainInfo{Signatures: -1, PoxSkipped: !withPox}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
@@ -340,7 +344,7 @@ func fetchChain(client *http.Client, node, api, ref string, signers map[int64]in
 				ci.NodeErr = err.Error()
 			}
 		})
-		if err != nil {
+		if err != nil || !withPox {
 			return
 		}
 		// PoX and the signer set are extras: a node that doesn't serve them still shows the rest
