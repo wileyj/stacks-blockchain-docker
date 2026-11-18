@@ -30,7 +30,7 @@ both: neither keeps state the other doesn't see.
 | Change a setting | edit `.env` | `sbd env set KEY=VALUE` (keeps a copy in `.env.save`) |
 | Preflight checks | — | `sbd doctor` |
 | Live dashboard | `docker compose --profile '*' ps`, `docker stats`, `docker compose logs -f` | `sbd ui` (see [Dashboard](#dashboard)) |
-| Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest` writes your hand-edited `Config.toml` settings to `Config.overrides.toml.suggested` | `sbd migrate` (`sbd plan migrate` to preview) |
+| Upgrade an install from the old layout | add `COMPOSE_PROFILES` to `.env`; `docker compose run --rm config suggest --apply` carries your hand-edited `Config.toml` settings over to `Config.overrides.toml` | `sbd migrate` (`sbd plan migrate` to preview) |
 
 `sbd` finds the checkout from the current directory (or `-C <dir>`), creates `.env` from `sample.env`
 when there is none, and refuses `seed`, `reset`, `bns` and `db upgrade` while the stack runs. The jobs

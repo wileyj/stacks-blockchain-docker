@@ -27,6 +27,15 @@ import (
 
 const suggestedName = "Config.overrides.toml.suggested"
 
+const suggestedHeader = "# Suggested by `config suggest` (sbd migrate) from your previous Config.toml: the settings\n" +
+	"# that differ from what is rendered now. Review, then rename to Config.overrides.toml.\n"
+
+func appliedHeader(legacy string) string {
+	return "# Carried over by sbd migrate from your previous Config.toml (kept as " + legacy + "): the settings\n" +
+		"# that differ from what is rendered now. The node checks the config before each start; if it rejects\n" +
+		"# a setting, the start stops with a message: edit or remove that setting here.\n"
+}
+
 // Suggestion is the result of comparing a legacy Config.toml with the rendered one.
 type Suggestion struct {
 	Out     []byte   // the suggested overrides file; nil when there is nothing to carry over
@@ -50,7 +59,7 @@ func envKeys(network string) map[string]string {
 	}
 }
 
-func runSuggest(confRoot string, getenv func(string) string) error {
+func runSuggest(confRoot string, getenv func(string) string, apply bool) error {
 	s, err := SettingsFromEnv(getenv)
 	if err != nil {
 		return err
@@ -77,13 +86,24 @@ func runSuggest(confRoot string, getenv func(string) string) error {
 		return fmt.Errorf("%s: %w", filepath.Base(legacyPath), err)
 	}
 	rel := filepath.Join(s.Network, filepath.Base(legacyPath))
-	if sg.Out == nil {
+	overrides := filepath.Join(dir, "Config.overrides.toml")
+	_, haveOverrides := os.Stat(overrides)
+	switch {
+	case sg.Out == nil:
 		fmt.Printf("config: %s has no settings of its own beyond what is rendered now; nothing to carry over\n", rel)
-	} else {
+	case apply && haveOverrides != nil:
+		// Applied, not suggested (owner, 2026-11-18): the config check runs the node's check-config before
+		// every start, so a setting the node rejects stops the start with a message instead of a bad node
+		out := strings.Replace(string(sg.Out), suggestedHeader, appliedHeader(filepath.Base(legacyPath)), 1)
+		if err := writeAtomic(overrides, []byte(out), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("config: carried your settings from %s over to %s\n", rel, filepath.Join(s.Network, "Config.overrides.toml"))
+	default:
 		if err := writeAtomic(filepath.Join(dir, suggestedName), sg.Out, 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("config: wrote %s from %s. Review it, then rename it to Config.overrides.toml\n", filepath.Join(s.Network, suggestedName), rel)
+		fmt.Printf("config: wrote %s from %s. Review it, then merge it into Config.overrides.toml\n", filepath.Join(s.Network, suggestedName), rel)
 	}
 	for _, k := range sg.Added {
 		fmt.Printf("config:   check %s: not in the new config (the node rejects unknown keys)\n", k)
@@ -169,8 +189,7 @@ func Suggest(legacy, tmpl, upstream []byte, s Settings) (Suggestion, error) {
 		return sg, err
 	}
 	var hdr strings.Builder
-	hdr.WriteString("# Suggested by `config suggest` (sbd migrate) from your previous Config.toml: the settings\n")
-	hdr.WriteString("# that differ from what is rendered now. Review, then rename to Config.overrides.toml.\n")
+	hdr.WriteString(suggestedHeader)
 	if len(sg.Added) > 0 {
 		hdr.WriteString("# Not in the new config, check each (the node rejects unknown keys):\n")
 		for _, k := range sg.Added {

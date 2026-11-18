@@ -11,11 +11,14 @@ import (
 )
 
 // migratePlan brings an install from before the compose-first layout up to date without moving any
-// data (refactor/14 §8). It only edits .env and writes a suggestion file; everything else is a note.
+// data (refactor/14 §8). It edits .env and carries a hand-edited Config.toml's settings over; the rest
+// are notes.
 //   - COMPOSE_PROFILES: an old .env has none, and then `docker compose up -d` starts nothing but the
 //     config job. It is set to node,api, plus signer when the old Config.toml had the signer on.
-//   - A hand-edited Config.toml: the config job moves it aside on the next start; `config suggest`
-//     writes Config.overrides.toml.suggested with the user's own settings, for review.
+//   - A hand-edited Config.toml: the config job moves it aside on the next start, and `config suggest
+//     --apply` writes the user's own settings to Config.overrides.toml (owner, 2026-11-18: applied, not
+//     left for review; the config check stops a start the node would reject). With overrides of their
+//     own already, it writes Config.overrides.toml.suggested beside them instead.
 //   - A stack still running from the old layout (project compose-files) is stopped first, the node
 //     first with its full shutdown time (owner, 2026-11-18): the new stack can't start beside it.
 //   - Settings and data the new layout doesn't use are reported.
@@ -65,10 +68,11 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 	case legacy != "" && errSuggested == nil:
 		note("review conf/" + net + "/Config.overrides.toml.suggested, then rename it to Config.overrides.toml (it holds your settings from " + filepath.Base(legacy) + ")")
 	case legacy != "" && err == nil:
-		note("conf/" + net + "/" + filepath.Base(legacy) + " is a hand-edited config, and Config.overrides.toml exists already: compare them by hand")
-	case legacy != "":
-		note("conf/" + net + "/" + filepath.Base(legacy) + " was edited by hand; Config.toml is generated now. Writing your settings to Config.overrides.toml.suggested for review")
+		note("conf/" + net + "/" + filepath.Base(legacy) + " was edited by hand, and you have a Config.overrides.toml: writing its settings to Config.overrides.toml.suggested to compare with yours")
 		p = append(p, compose("run", "--rm", "config", "suggest"))
+	case legacy != "":
+		note("conf/" + net + "/" + filepath.Base(legacy) + " was edited by hand; Config.toml is generated now. Carrying your settings over to Config.overrides.toml")
+		p = append(p, compose("run", "--rm", "config", "suggest", "--apply"))
 	}
 
 	dataRoot := c.Value("DATA_ROOT")

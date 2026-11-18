@@ -79,9 +79,9 @@ two changes, and `sbd migrate` makes them without moving any data (`sbd plan mig
 
 - `.env` needs `COMPOSE_PROFILES` (for example `node,api`); without it, `docker compose up -d` starts
   nothing but the config job.
-- A hand-edited `conf/<network>/Config.toml` is regenerated now. `docker compose run --rm config
-  suggest` writes your own settings from it to `Config.overrides.toml.suggested`; review it and rename it
-  to `Config.overrides.toml`.
+- A hand-edited `conf/<network>/Config.toml` is regenerated now (yours is kept as `Config.toml.legacy`).
+  `docker compose run --rm config suggest --apply` carries your own settings over to
+  `Config.overrides.toml`; if the node rejects one at the next start, edit or remove it there.
 
 Stop a stack still running from the old layout before starting the new one; `sbd migrate` does this
 for you. Without `sbd`, stop it directly: the node first, with time to finish its run loop, then the

@@ -80,13 +80,37 @@ func TestRunSuggestFindsTheLegacyFile(t *testing.T) {
 	// The renderer already moved the hand-edited file aside and wrote a generated one
 	os.WriteFile(filepath.Join(dir, "Config.toml"), []byte(Marker+" from Config.toml.sample.\n"), 0o644)
 	getenv := env(map[string]string{"NETWORK": "mainnet", "COMPOSE_PROFILES": "node,api"})
-	if err := runSuggest(root, getenv); err != nil {
+	if err := runSuggest(root, getenv, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, suggestedName)); err != nil {
 		t.Errorf("no suggestion written: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "Config.overrides.toml")); err == nil {
-		t.Errorf("suggest must never write Config.overrides.toml")
+		t.Errorf("suggest without --apply must never write Config.overrides.toml")
+	}
+
+	// --apply (sbd migrate): the settings go straight into Config.overrides.toml when there is none
+	os.Remove(filepath.Join(dir, suggestedName))
+	if err := runSuggest(root, getenv, true); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := os.ReadFile(filepath.Join(dir, "Config.overrides.toml"))
+	if err != nil || !strings.HasPrefix(string(applied), "# Carried over by sbd migrate") || !strings.Contains(string(applied), "Config.toml.legacy") {
+		t.Fatalf("not applied: %v\n%s", err, applied)
+	}
+	if _, err := os.Stat(filepath.Join(dir, suggestedName)); err == nil {
+		t.Error("applied, yet a suggestion was written too")
+	}
+	// An existing Config.overrides.toml is never overwritten: a suggestion instead
+	os.WriteFile(filepath.Join(dir, "Config.overrides.toml"), []byte("# mine\n"), 0o644)
+	if err := runSuggest(root, getenv, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "Config.overrides.toml")); string(b) != "# mine\n" {
+		t.Errorf("existing overrides overwritten:\n%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, suggestedName)); err != nil {
+		t.Errorf("no suggestion beside existing overrides: %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -28,9 +29,11 @@ func main() {
 	}
 	confRoot := flag.String("conf", "/conf", "directory holding conf/<network>/")
 	flag.Parse()
-	// `config suggest` writes Config.overrides.toml.suggested from a legacy Config.toml (sbd migrate)
+	// `config suggest` writes Config.overrides.toml.suggested from a legacy Config.toml; with --apply
+	// (sbd migrate) it writes Config.overrides.toml itself when there is none yet
 	if flag.Arg(0) == "suggest" {
-		if err := runSuggest(*confRoot, os.Getenv); err != nil {
+		apply := slices.Contains(flag.Args()[1:], "--apply")
+		if err := runSuggest(*confRoot, os.Getenv, apply); err != nil {
 			fmt.Fprintf(os.Stderr, "config: %v\n", err)
 			os.Exit(1)
 		}
