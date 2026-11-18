@@ -26,6 +26,7 @@ type fakeDocker struct {
 	config  string // docker compose config --format json output
 	info    string // docker info --format '{{json .}}' output
 	inspect string // docker inspect output (any containers)
+	legacy  string // docker ps -q output for the old layout's project
 	exit    int
 	ran     []string
 }
@@ -51,6 +52,9 @@ func (f *fakeDocker) Output(args []string) ([]byte, error) {
 	}
 	if args[0] == "inspect" {
 		return []byte(f.inspect), nil
+	}
+	if strings.Join(args, " ") == strings.Join(legacyPSArgs, " ") {
+		return []byte(f.legacy), nil
 	}
 	return nil, nil
 }
@@ -420,5 +424,23 @@ func TestDoctorHostAndDisk(t *testing.T) {
 	_, out, _ = sbd(t, dir, &fakeDocker{version: "2.39.1"}, "--host", "ssh://node1", "doctor")
 	if !strings.Contains(out, "not checked: the data is on the remote Docker host") {
 		t.Errorf("remote docker host:\n%s", out)
+	}
+}
+
+// sbd migrate stops a stack still running from the old layout, the node first (owner, 2026-11-18)
+func TestMigrateStopsTheOldStack(t *testing.T) {
+	dir := project(t, "NETWORK=testnet\nSTACKS_SHUTDOWN_TIMEOUT=900\n")
+	_, out, _ := sbd(t, dir, &fakeDocker{legacy: "abc123\ndef456\n"}, "plan", "migrate")
+	want := "# the old layout's stack (project compose-files) is running: stopping it, the node first\n" +
+		"docker stop -t 900 stacks-blockchain\ndocker compose -p compose-files down\n"
+	if !strings.HasPrefix(out, want) {
+		t.Errorf("plan:\n%s", out)
+	}
+	d := &fakeDocker{legacy: "abc123\n"}
+	if code, _, errOut := sbd(t, dir, d, "migrate"); code != 0 || len(d.ran) < 2 || d.ran[0] != "stop -t 900 stacks-blockchain" || d.ran[1] != "compose -p compose-files down" {
+		t.Errorf("exit %d %s, ran %v", code, errOut, d.ran)
+	}
+	if _, out, _ := sbd(t, dir, &fakeDocker{}, "plan", "migrate"); strings.Contains(out, "compose-files") {
+		t.Errorf("nothing old running, nothing to stop:\n%s", out)
 	}
 }

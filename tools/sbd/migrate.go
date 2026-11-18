@@ -16,13 +16,20 @@ import (
 //     config job. It is set to node,api, plus signer when the old Config.toml had the signer on.
 //   - A hand-edited Config.toml: the config job moves it aside on the next start; `config suggest`
 //     writes Config.overrides.toml.suggested with the user's own settings, for review.
-//   - Settings, containers and data the new layout doesn't use are reported.
+//   - A stack still running from the old layout (project compose-files) is stopped first, the node
+//     first with its full shutdown time (owner, 2026-11-18): the new stack can't start beside it.
+//   - Settings and data the new layout doesn't use are reported.
 func migratePlan(c *Ctx, args []string) (Plan, error) {
 	if len(args) > 0 {
 		return nil, usagef("migrate: unexpected argument %q", args[0])
 	}
 	var p Plan
 	note := func(s string) { p = append(p, Step{Note: s}) }
+	if out, err := c.Docker.Output(legacyPSArgs); err == nil && len(bytes.TrimSpace(out)) > 0 {
+		note("the old layout's stack (project compose-files) is running: stopping it, the node first")
+		p = append(p, Step{Docker: []string{"stop", "-t", orDefault(c.Value("STACKS_SHUTDOWN_TIMEOUT"), "1200"), "stacks-blockchain"}},
+			compose("-p", "compose-files", "down"))
+	}
 	if c.Env == nil {
 		p = append(p, Step{CreateEnv: true})
 	}
@@ -74,14 +81,14 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 	if fi, err := os.Stat(filepath.Join(dataRoot, net, "event-replay")); err == nil && fi.IsDir() {
 		note(filepath.Join(dataRoot, net, "event-replay") + " is no longer used (event replay was removed); delete it to free the space")
 	}
-	if out, err := c.Docker.Output([]string{"ps", "-q", "--filter", "label=com.docker.compose.project=compose-files"}); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		note("containers from the old compose-files layout are running: stop them before starting this stack: docker stop -t 1200 stacks-blockchain && docker compose -p compose-files down (docs/upgrade.md)")
-	}
 	if len(p) == 0 {
 		note("nothing to migrate")
 	}
 	return p, nil
 }
+
+// legacyPSArgs lists the running containers of the old layout, whose compose files lived in compose-files/.
+var legacyPSArgs = []string{"ps", "-q", "--filter", "label=com.docker.compose.project=compose-files"}
 
 // obsoleteKeys are .env settings that nothing reads any more, with what replaced them.
 var obsoleteKeys = map[string]string{
