@@ -94,7 +94,13 @@ func runSuggest(confRoot string, getenv func(string) string, apply bool) error {
 	case apply && haveOverrides != nil:
 		// Applied, not suggested (owner, 2026-11-18): the config check runs the node's check-config before
 		// every start, so a setting the node rejects stops the start with a message instead of a bad node
-		out := strings.Replace(string(sg.Out), suggestedHeader, appliedHeader(filepath.Base(legacyPath)), 1)
+		// Before the first start the hand-edited file is still Config.toml; the renderer moves it to
+		// Config.toml.legacy, so name it as it will be found (found 2026-11-20: the header said Config.toml)
+		kept := filepath.Base(legacyPath)
+		if kept == "Config.toml" {
+			kept = "Config.toml.legacy"
+		}
+		out := strings.Replace(string(sg.Out), suggestedHeader, appliedHeader(kept), 1)
 		if err := writeAtomic(overrides, []byte(out), 0o644); err != nil {
 			return err
 		}

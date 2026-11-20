@@ -102,6 +102,24 @@ func TestRunSuggestFindsTheLegacyFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, suggestedName)); err == nil {
 		t.Error("applied, yet a suggestion was written too")
 	}
+	// Before the first start the hand-edited file is still Config.toml: the header names where it goes
+	os.Remove(filepath.Join(dir, "Config.overrides.toml"))
+	legacyBytes, _ := os.ReadFile(filepath.Join(dir, "Config.toml.legacy"))
+	os.Remove(filepath.Join(dir, "Config.toml.legacy"))
+	os.WriteFile(filepath.Join(dir, "Config.toml"), legacyBytes, 0o644)
+	if err := runSuggest(root, getenv, true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "Config.overrides.toml")); !strings.Contains(string(b), "(kept as Config.toml.legacy)") {
+		t.Errorf("header before the first start:\n%s", b)
+	}
+	os.Remove(filepath.Join(dir, "Config.overrides.toml"))
+	os.WriteFile(filepath.Join(dir, "Config.toml"), []byte(Marker+" from Config.toml.sample.\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "Config.toml.legacy"), legacyBytes, 0o644)
+	if err := runSuggest(root, getenv, true); err != nil {
+		t.Fatal(err)
+	}
+
 	// An existing Config.overrides.toml is never overwritten: a suggestion instead
 	os.WriteFile(filepath.Join(dir, "Config.overrides.toml"), []byte("# mine\n"), 0o644)
 	if err := runSuggest(root, getenv, true); err != nil {
