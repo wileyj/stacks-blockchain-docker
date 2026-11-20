@@ -23,6 +23,10 @@ func TestUpdatePlan(t *testing.T) {
 	if !strings.HasPrefix(out, "edit .env: STACKS_SIGNER_VERSION=4.0.6\n") || !strings.Contains(out, "--force-recreate stacks-signer") {
 		t.Errorf("signer --version:\n%s", out)
 	}
+	// The compose service name works the same as the short name
+	if _, byService, _ := sbd(t, dir, &fakeDocker{}, "plan", "update", "stacks-blockchain-api"); byService != want {
+		t.Errorf("by service name:\n%s", byService)
+	}
 	if _, out, _ = sbd(t, dir, &fakeDocker{}, "plan", "update", "--version", "9.10.0", "api"); strings.Contains(out, "edit .env") {
 		t.Errorf("an unchanged pin is no edit:\n%s", out)
 	}
@@ -30,11 +34,12 @@ func TestUpdatePlan(t *testing.T) {
 		args []string
 		msg  string
 	}{
-		{[]string{"update"}, "usage: sbd update <api|node|proxy|signer>"},
+		{[]string{"update"}, "usage: sbd update <proxy|stacks-blockchain|stacks-blockchain-api|stacks-signer>"},
 		{[]string{"update", "postgres"}, "sbd db upgrade"},
 		{[]string{"update", "grafana"}, "unknown service"},
 		{[]string{"update", "api", "--version", "9.10;rm"}, "isn't an image tag"},
 		{[]string{"update", "signer", "--version", "4.0.8"}, "update the node first"},
+		{[]string{"update", "stacks-signer", "--version", "4.0.8"}, "update the node first"},
 	} {
 		code, _, errOut := sbd(t, dir, &fakeDocker{}, append([]string{"plan"}, tc.args...)...)
 		if code != 2 || !strings.Contains(errOut, tc.msg) {

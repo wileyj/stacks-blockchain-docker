@@ -32,10 +32,11 @@ migration's duration. The signer misses signatures while it restarts.
 docker compose pull stacks-blockchain-api
 docker compose run --rm config
 docker compose up -d --no-deps --force-recreate stacks-blockchain-api
-# sbd: sbd update api --version 9.10.0
+# sbd: sbd update stacks-blockchain-api --version 9.10.0
 ```
 
-`sbd update` takes `node`, `api`, `signer` or `proxy`, and only a running service: on a stopped stack,
+`sbd update` takes a service (`stacks-blockchain`, `stacks-blockchain-api`, `stacks-signer` or `proxy`; or
+`node`, `api`, `signer`), and only a running one: on a stopped stack,
 use `sbd start`. It refuses a signer newer than the node, which goes first. Postgres majors are
 `sbd db upgrade` (below).
 

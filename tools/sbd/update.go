@@ -16,7 +16,7 @@ import (
 // is `sbd db upgrade`.
 
 func init() {
-	Commands = append(Commands, &Command{Name: "update", Usage: "update <node|api|signer|proxy> [--version V]",
+	Commands = append(Commands, &Command{Name: "update", Usage: "update <stacks-blockchain|stacks-blockchain-api|stacks-signer|proxy> [--version V] (or node, api, signer)",
 		Help: "Pull and recreate one service, the others keep running (--version sets its pin in .env first)",
 		Plan: updatePlan, Guard: updateGuard})
 }
@@ -36,6 +36,19 @@ var updatables = map[string]updatable{
 		"the API is unreachable through the proxy while it restarts"},
 }
 
+// lookupUpdatable takes a compose service name (stacks-blockchain) or its short name (node).
+func lookupUpdatable(name string) (string, updatable, bool) {
+	if u, ok := updatables[name]; ok {
+		return name, u, true
+	}
+	for k, u := range updatables {
+		if u.service == name {
+			return k, u, true
+		}
+	}
+	return "", updatable{}, false
+}
+
 var imageTagRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$`)
 
 func updatePlan(c *Ctx, args []string) (Plan, error) {
@@ -45,22 +58,20 @@ func updatePlan(c *Ctx, args []string) (Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := slices.Sorted(func(yield func(string) bool) {
-		for k := range updatables {
-			if !yield(k) {
-				return
-			}
-		}
-	})
-	if len(pos) != 1 {
-		return nil, usagef("usage: sbd update <%s> [--version V]", strings.Join(names, "|"))
+	var services []string
+	for _, u := range updatables {
+		services = append(services, u.service)
 	}
-	u, ok := updatables[pos[0]]
+	slices.Sort(services)
+	if len(pos) != 1 {
+		return nil, usagef("usage: sbd update <%s> [--version V]", strings.Join(services, "|"))
+	}
+	name, u, ok := lookupUpdatable(pos[0])
 	if !ok {
 		if pos[0] == "postgres" {
 			return nil, usagef("postgres isn't updated this way: a new major is sbd db upgrade (docs/upgrade.md)")
 		}
-		return nil, usagef("update: unknown service %q (one of %s)", pos[0], strings.Join(names, ", "))
+		return nil, usagef("update: unknown service %q (one of %s; or node, api, signer)", pos[0], strings.Join(services, ", "))
 	}
 	var p Plan
 	if v := strings.TrimSpace(*version); v != "" {
@@ -68,7 +79,7 @@ func updatePlan(c *Ctx, args []string) (Plan, error) {
 			return nil, usagef("update: %q isn't an image tag", v)
 		}
 		// 4.0.6+ signers rely on node endpoints only 4.0.6+ nodes have: the node goes first (docs/upgrade.md)
-		if pos[0] == "signer" && newer(v, c.Value("STACKS_BLOCKCHAIN_VERSION")) {
+		if name == "signer" && newer(v, c.Value("STACKS_BLOCKCHAIN_VERSION")) {
 			return nil, usagef("update: signer %s is newer than the node (%s): update the node first (sbd update node --version %s)",
 				v, c.Value("STACKS_BLOCKCHAIN_VERSION"), v)
 		}
@@ -91,7 +102,8 @@ func updateGuard(c *Ctx, args []string) error {
 	if err != nil || len(pos) != 1 {
 		return err // the plan already refused bad arguments
 	}
-	svc := updatables[pos[0]].service
+	_, u, _ := lookupUpdatable(pos[0])
+	svc := u.service
 	up, err := running(c.Docker)
 	if err != nil {
 		return err
