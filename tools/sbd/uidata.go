@@ -270,6 +270,17 @@ type chainInfo struct {
 	Signers           int      // signers in the current cycle's set; 0 = unknown
 	Signatures        int      // signatures on the API's latest block; -1 = unknown
 	PoxSkipped        bool     // not asked: the node is behind (see fetchChain)
+	// What this poll fetched (chainOpts): the poll loop keeps the previous values otherwise
+	PeersFetched, PoxFetched bool
+}
+
+// chainOpts says what a poll asks the node for beyond /v2/info (owner, 2026-11-20). Each request is a log
+// line on the node, and /v2/pox can log an ERRO, so slow-changing data is asked for less often: PoX only
+// when synced and the Bitcoin height moved since PoxBurn, the neighbors only when Neighbors is set.
+type chainOpts struct {
+	Pox       bool
+	PoxBurn   int64
+	Neighbors bool
 }
 
 // poxInfo is the part of the node's /v2/pox the dashboard shows.
@@ -317,8 +328,8 @@ func getJSON(client *http.Client, url string, v any) error {
 //
 // withPox is false while the node is behind: asked about a reward cycle beyond the Bitcoin height it has
 // reached, the node logs an ERRO for every request (found 2026-11-18: one per poll during a testnet sync).
-func fetchChain(client *http.Client, node, api, ref string, signers map[int64]int, withPox bool) chainInfo {
-	ci := chainInfo{Signatures: -1, PoxSkipped: !withPox}
+func fetchChain(client *http.Client, node, api, ref string, signers map[int64]int, opts chainOpts) chainInfo {
+	ci := chainInfo{Signatures: -1, PoxSkipped: !opts.Pox}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
@@ -335,16 +346,19 @@ func fetchChain(client *http.Client, node, api, ref string, signers map[int64]in
 			Inbound, Outbound []json.RawMessage
 		}
 		err := getJSON(client, node+"/v2/info", &info)
-		if err == nil {
+		if err == nil && opts.Neighbors {
 			err = getJSON(client, node+"/v2/neighbors", &nb)
 		}
 		set(func() {
-			ci.Tip, ci.Burn, ci.PeersIn, ci.PeersOut = info.Tip, info.Burn, len(nb.Inbound), len(nb.Outbound)
+			ci.Tip, ci.Burn = info.Tip, info.Burn
+			if opts.Neighbors {
+				ci.PeersIn, ci.PeersOut, ci.PeersFetched = len(nb.Inbound), len(nb.Outbound), err == nil
+			}
 			if err != nil {
 				ci.NodeErr = err.Error()
 			}
 		})
-		if err != nil || !withPox {
+		if err != nil || !opts.Pox || info.Burn == opts.PoxBurn {
 			return
 		}
 		// PoX and the signer set are extras: a node that doesn't serve them still shows the rest
@@ -363,7 +377,7 @@ func fetchChain(client *http.Client, node, api, ref string, signers map[int64]in
 				signers[cycle] = len(set.StackerSet.Signers)
 			}
 		}
-		set(func() { ci.Pox, ci.Signers = &pox, signers[cycle] })
+		set(func() { ci.Pox, ci.Signers, ci.PoxFetched = &pox, signers[cycle], true })
 	})
 	wg.Go(func() {
 		if api == "" {

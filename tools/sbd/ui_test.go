@@ -123,12 +123,13 @@ func TestSyncStatus(t *testing.T) {
 
 func TestFetchChain(t *testing.T) {
 	now := time.Now().Unix()
-	stackerSetCalls, poxCalls := 0, 0
+	stackerSetCalls, poxCalls, neighborCalls := 0, 0, 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/info":
 			fmt.Fprint(w, `{"stacks_tip_height":9449931,"burn_block_height":975206}`)
 		case "/v2/neighbors":
+			neighborCalls++
 			fmt.Fprint(w, `{"sample":[{},{}],"inbound":[],"outbound":[{},{},{}]}`)
 		case "/extended/v2/blocks":
 			fmt.Fprintf(w, `{"results":[{"height":9449930,"block_time":%d}]}`, now-12)
@@ -148,7 +149,7 @@ func TestFetchChain(t *testing.T) {
 	}))
 	defer srv.Close()
 	signers := map[int64]int{}
-	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, true)
+	ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, chainOpts{Pox: true, Neighbors: true})
 	if ci.NodeErr != "" || ci.APIErr != "" || ci.Tip != 9449931 || ci.Burn != 975206 || ci.PeersOut != 3 ||
 		ci.APITip != 9449930 || ci.BlockTime.Unix() != now-12 || ci.BurnTime.Unix() != now-600 || ci.RefSet {
 		t.Fatalf("got %+v", ci)
@@ -158,21 +159,29 @@ func TestFetchChain(t *testing.T) {
 	}
 	// While the node is behind, PoX isn't asked for: it would log an ERRO per request
 	poxBefore := poxCalls
-	if ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, false); ci.Pox != nil || !ci.PoxSkipped || poxCalls != poxBefore || ci.Tip != 9449931 {
+	if ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, chainOpts{Neighbors: true}); ci.Pox != nil || !ci.PoxSkipped || poxCalls != poxBefore || ci.Tip != 9449931 {
 		t.Errorf("behind: pox %v skipped %v calls %d->%d", ci.Pox, ci.PoxSkipped, poxBefore, poxCalls)
 	}
+	// At the same Bitcoin height as the last PoX fetch, PoX isn't asked again; without Neighbors, no peers
+	if ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, chainOpts{Pox: true, PoxBurn: 975206}); ci.PoxFetched || ci.PeersFetched || poxCalls != poxBefore || neighborCalls != 2 {
+		t.Errorf("same burn height: pox fetched %v, peers fetched %v, pox calls %d->%d, neighbor calls %d", ci.PoxFetched, ci.PeersFetched, poxBefore, poxCalls, neighborCalls)
+	}
+	// A new Bitcoin block: PoX again
+	if ci := fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, chainOpts{Pox: true, PoxBurn: 975205}); !ci.PoxFetched || poxCalls != poxBefore+1 {
+		t.Errorf("new burn height: pox fetched %v, calls %d->%d", ci.PoxFetched, poxBefore, poxCalls)
+	}
 	// The signer set is fetched once per cycle
-	fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, true)
+	fetchChain(srv.Client(), srv.URL, srv.URL, "", signers, chainOpts{Pox: true, Neighbors: true})
 	if stackerSetCalls != 1 {
 		t.Errorf("stacker set fetched %d times", stackerSetCalls)
 	}
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
-	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "", signers, true)
+	ci = fetchChain(srv.Client(), closed.URL, srv.URL+"/nope", "", signers, chainOpts{Pox: true, Neighbors: true})
 	if ci.NodeErr != "connection refused" || ci.APIErr != "404 Not Found" || ci.Pox != nil || ci.Signatures != -1 {
 		t.Errorf("errors: node %q, api %q", ci.NodeErr, ci.APIErr)
 	}
-	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/", signers, true)
+	ci = fetchChain(srv.Client(), "", srv.URL, srv.URL+"/", signers, chainOpts{Pox: true, Neighbors: true})
 	if ci.NodeErr != "not reachable" || !ci.RefSet || ci.RefTip != 9449931 {
 		t.Fatalf("without the node, with a reference: %+v", ci)
 	}

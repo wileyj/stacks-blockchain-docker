@@ -36,6 +36,7 @@ const (
 	logKeep      = 500
 	histLen      = 720 // 1 h at the 5 s chain poll
 	pollTime     = 5 * time.Second
+	peersPoll    = 30 * time.Second // /v2/neighbors: peer counts change slowly
 )
 
 func uiRun(c *Ctx, args []string) (int, error) {
@@ -154,14 +155,31 @@ func poll(p *tea.Program, c *Ctx, refresh <-chan struct{}, done <-chan struct{})
 	withSigner := slices.Contains(List(c.Value("COMPOSE_PROFILES")), "signer")
 	signers := map[int64]int{}
 	synced := false // from the previous poll: PoX is asked for only then (fetchChain)
+	// The last peers and PoX, kept between the polls that don't ask for them (chainOpts)
+	var lastPeers time.Time
+	var peersIn, peersOut, poxSigners int
+	var pox *poxInfo
+	var poxBurn int64
 	t := time.NewTicker(pollTime)
 	defer t.Stop()
 	for full := true; ; {
 		svcs, err := collectServices(c.Docker)
 		p.Send(svcMsg{svcs, err})
 		if full {
+			opts := chainOpts{Pox: synced, PoxBurn: poxBurn, Neighbors: time.Since(lastPeers) >= peersPoll}
 			ci := fetchChain(client, endpoint(svcs, "stacks-blockchain", rpcPort),
-				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers, synced)
+				endpoint(svcs, "stacks-blockchain-api", apiPort), c.Value(refKey), signers, opts)
+			if ci.PeersFetched {
+				lastPeers, peersIn, peersOut = time.Now(), ci.PeersIn, ci.PeersOut
+			} else {
+				ci.PeersIn, ci.PeersOut = peersIn, peersOut
+			}
+			switch {
+			case ci.PoxFetched:
+				pox, poxSigners, poxBurn = ci.Pox, ci.Signers, ci.Burn
+			case synced && pox != nil:
+				ci.Pox, ci.Signers = pox, poxSigners
+			}
 			_, lv := syncStatus(ci, time.Now())
 			synced = lv == lvOK
 			p.Send(chainMsg{ci, time.Now()})
