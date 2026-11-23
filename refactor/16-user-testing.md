@@ -43,10 +43,11 @@ release predates these changes.
 | 1 | On its own VM, the old layout as users have it today: `git clone https://github.com/stx-labs/stacks-blockchain-docker && cd stacks-blockchain-docker` (upstream `master`, `d2e558c`), `cp sample.env .env`, set `NETWORK` (testnet or mainnet), and optionally hand-edit `conf/testnet/Config.toml` (e.g. a setting of your own) | |
 | 2 | `./manage.sh -n <network> -a start` and let it sync a few hours (don't use its seed script) | The old stack runs (containers in the `compose-files` project) |
 | 3 | Upgrade the checkout: `git remote add fork https://github.com/wileyj/stacks-blockchain-docker && git fetch fork && git checkout -b upgrade fork/chore/refactor` | `manage.sh` is gone; the README points to `sbd` and plain Compose |
-| 4 | Follow `docs/upgrade.md` "An install from before the compose layout": stop the old stack (`docker stop -t 1200 stacks-blockchain`, `docker compose -p compose-files down`) | Nothing from the old project is left running |
-| 5 | Build `sbd`, then `sbd plan migrate` and `sbd migrate` | It adds `COMPOSE_PROFILES`, lists obsolete settings, and moves a hand-edited `Config.toml` aside with your settings in `Config.overrides.toml.suggested`; no data moves |
-| 6 | Review and rename the suggestion to `Config.overrides.toml`; `sbd doctor`; `sbd start` | The node resumes from its existing chainstate (no resync) and keeps your own setting in the rendered `Config.toml` |
-| 7 | `sbd ui`, then `sbd stop` | As in mode 1 |
+| 4 | Build `sbd` (`./scripts/build-sbd.sh`), then `./sbd plan migrate`, leaving the old stack running | The plan stops the old stack (the node first), sets `COMPOSE_PROFILES` and `API_BIND_ADDR`/`RPC_BIND_ADDR=0.0.0.0` (as the old layout published them), appends the optional settings `.env` lacks (commented out), lists obsolete settings, and carries a hand-edited `Config.toml` over (`config suggest --apply`) |
+| 5 | `./sbd migrate` | Nothing from the `compose-files` project is left running; `Config.overrides.toml` has your settings under "Carried over by sbd migrate"; `.env.save` holds the old `.env`; no data moves |
+| 6 | `./sbd doctor`, `./sbd start` (nothing in between) | Doctor warns about the exposed ports only; the node resumes from its chainstate (no resync) with your setting in the rendered `Config.toml`; ports 3999 and 20443 answer from another machine, as before |
+| 7 | `./sbd update stacks-blockchain --version <current>`, then `stacks-blockchain-api` | Each is recreated alone; the node migrates its chainstate, the API its database, and both return to the tip |
+| 8 | `./sbd ui`, then `./sbd stop` | As in mode 1 |
 
 **Afterwards:** note the results in [15](./15-verification-log.md), fix what they turn up, then the PR and
 the release ([HANDOFF](./HANDOFF.md) "Next"). The VMs can go.
