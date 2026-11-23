@@ -96,11 +96,13 @@ docker stop -t 1200 stacks-blockchain
 docker compose -p compose-files down
 ```
 
-## Breaking: services listen on this host only
+## Services listen on this host only (new installs)
 
-The API (3999) and the node RPC (20443) used to be published on every interface. They now listen on
-`127.0.0.1` only; the node's P2P port stays public. If other machines use your API, add the `proxy`
-profile (now Caddy, see below), or set `API_BIND_ADDR=0.0.0.0` / `RPC_BIND_ADDR=0.0.0.0`.
+The API (3999) and the node RPC (20443) used to be published on every interface. A new install
+publishes them on `127.0.0.1` only; the node's P2P port stays public. `sbd migrate` keeps an existing
+install as it was (`API_BIND_ADDR=0.0.0.0`, `RPC_BIND_ADDR=0.0.0.0`): set them to `127.0.0.1` to
+close them, and use the `proxy` profile (now Caddy, see below) to serve the API to other machines.
+Without `sbd`, add those two lines to `.env` yourself to keep the old behaviour.
 `EXPOSE_POSTGRES` and `compose.postgres-port.yaml` are replaced by `POSTGRES_LOCAL=1`, which publishes
 postgres on 127.0.0.1 only (it can no longer be published beyond this host), and
 `METRICS_BIND_ADDR` / `MONITORING_BIND` are gone: monitoring is never published beyond this host.

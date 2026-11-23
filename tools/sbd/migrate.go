@@ -15,6 +15,9 @@ import (
 // are notes.
 //   - COMPOSE_PROFILES: an old .env has none, and then `docker compose up -d` starts nothing but the
 //     config job. It is set to node,api, plus signer when the old Config.toml had the signer on.
+//   - The API and the node RPC stay on every interface, as the old layout published them (no host
+//     address: 0.0.0.0; owner, 2026-11-23): API_BIND_ADDR / RPC_BIND_ADDR are set to 0.0.0.0 unless
+//     .env sets them already. A new install gets 127.0.0.1; sbd doctor warns about either.
 //   - A hand-edited Config.toml: the config job moves it aside on the next start, and `config suggest
 //     --apply` writes the user's own settings to Config.overrides.toml (owner, 2026-11-18: applied, not
 //     left for review; the config check stops a start the node would reject). With overrides of their
@@ -50,7 +53,16 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 	if _, set := c.envGet("COMPOSE_PROFILES"); !set {
 		profiles := "node,api"
 		note("COMPOSE_PROFILES is missing from .env: without it `docker compose up -d` starts no services")
-		note("the API (3999) and the node RPC (20443) now listen on this host only: to serve the API to other machines, add proxy to COMPOSE_PROFILES (or set API_BIND_ADDR / RPC_BIND_ADDR)")
+		var keep []string
+		for _, k := range []string{"API_BIND_ADDR", "RPC_BIND_ADDR"} {
+			if _, set := c.envGet(k); !set {
+				keep = append(keep, k)
+			}
+		}
+		if len(keep) > 0 {
+			note("the old layout published the API (3999) and the node RPC (20443) on every interface: keeping that. " +
+				"To serve them on this host only, set API_BIND_ADDR / RPC_BIND_ADDR to 127.0.0.1 (the default for new installs)")
+		}
 		if legacy != "" && signerWasOn(legacy) {
 			if key := signerKeyVar(net); strings.TrimSpace(c.Value(key)) != "" {
 				profiles += ",signer"
@@ -59,6 +71,9 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 			}
 		}
 		p = append(p, Step{SetKey: "COMPOSE_PROFILES", SetValue: profiles})
+		for _, k := range keep {
+			p = append(p, Step{SetKey: k, SetValue: "0.0.0.0"})
+		}
 	}
 	if c.Env != nil {
 		if lines := newSettings(c, p); len(lines) > 0 {
