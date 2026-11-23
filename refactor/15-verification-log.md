@@ -537,6 +537,42 @@ So the container itself costs about nothing; the libc of the image matters a lot
 | Deferred index | **19 h 25 m 39 s** with `CREATE INDEX CONCURRENTLY` while the stack ran; valid; `sbd_seed` schema dropped afterwards. Index comparison in [upstream-api-index-issue.md](./upstream-api-index-issue.md) |
 | First 30 min | Stacks tip +222 (9 331 755 → 9 331 976, faster later), API one block behind the node throughout, 0 restarts |
 
+### Functional tests (refactor/16), testnet — Linux x64, 2026-11-16 to 2026-11-23 [V]
+
+Hands-on runs by the owner on this host, one stack at a time.
+
+**Mode 1, a new user** (`sbd init`, Hiro archive seed, `sbd ui`, `sbd update`, plain Compose): passed after fixes.
+
+| # | Finding | Fix |
+|---|---|---|
+| F1 | README unclear on how to get `sbd` | README shows `./scripts/build-sbd.sh`; usage.md "Getting `sbd`" |
+| F2 | Building `sbd` needed Go knowledge | `scripts/build-sbd.sh`: host Go 1.27+ or the `golang` image, static, version from git |
+| F3 | Signer question unclear | reworded |
+| F4 | Seed prompts quoted sizes that were wrong for testnet | sizes removed; the seed itself shows snapshot, size and free space |
+| F5 | HOST "data 439.7 GB" unclear | `disk 439.7 free of 499.8 GiB`, worded like memory |
+| F6 | Tip graph odd; 5 s buckets too short | CPU and blocks: the last hour in 24 bars of 2.5 min, same width |
+| F7 | Log export ran without asking; one container only wanted | `e` asks y/N; in the log view it exports that service; `--dir`, `--since`; gzip per container under `exported-logs/<time>/` |
+| F8 | Sparkline widths differed | both 24 |
+
+**Mode 2, a `manage.sh` user upgrading** (upstream `d2e558c`, core 4.0.1 / API 9.0.1, hand-edited
+`num_neighbors = 24`): `sbd migrate` + `sbd start` on the same data; then `sbd update` to 4.0.7 / 9.10.0.
+Passed after fixes. Node chainstate migration took seconds; API migrations 9.0 → 9.10 ran on start.
+
+| # | Finding | Fix |
+|---|---|---|
+| L1–L3 | The old layout itself couldn't sync testnet (stale bootstrap key, old seed, pre-reset genesis/pox_5; no events_observer in the newer sample) | upstream only; used the current sample |
+| — | Migrate needed a manual stop, rename and restart | `sbd migrate` stops the old project (node first, full shutdown time) and runs `config suggest --apply` |
+| F9 | Node logged ERRO "Could not find prepare phase start ancestor" once per dashboard poll | `sbd ui` asks `/v2/pox` only when synced and on a new Bitcoin block |
+| F10 | PROBLEMS blamed the Bitcoin peer during catch-up | burn-age check only at the tip |
+| F11 | Carried-over header said "kept as Config.toml" | names `Config.toml.legacy` |
+| F12 | Dashboard was 34 of the node's 48 log lines a minute | `/v2/neighbors` every 30 s, `/v2/pox` per Bitcoin block (count to confirm on mainnet) |
+| F13 | A migrated `.env` lacks every newer optional setting | migrate appends them commented out, with descriptions; idempotent |
+| F14 | Migrate silently closed 3999/20443 (old layout: 0.0.0.0) | migrate sets `API_BIND_ADDR`/`RPC_BIND_ADDR=0.0.0.0` unless set |
+| F15 | `sbd update` took short names only | takes compose service names too |
+
+Noted for later: core 4.0.1 and 4.0.7 both log every RPC request at INFO (about 14 lines/min idle, from
+the API's poll and the healthcheck); rename `stacks-blockchain` → `stacks-core` (HANDOFF).
+
 ## Deferred, with reasons
 
 | Item | Why it can't be settled now | Where it will be |
