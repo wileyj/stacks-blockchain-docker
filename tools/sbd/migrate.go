@@ -21,6 +21,10 @@ import (
 //     own already, it writes Config.overrides.toml.suggested beside them instead.
 //   - A stack still running from the old layout (project compose-files) is stopped first, the node
 //     first with its full shutdown time (owner, 2026-11-18): the new stack can't start beside it.
+//   - Settings sample.env has and .env doesn't mention at all are appended, commented out with their
+//     descriptions (owner, 2026-11-23): an upgraded .env never saw sample.env, so its optional settings
+//     (API_BIND_ADDR, STACKS_P2P_ADDRESS, PROXY_TLS, ...) were only in the docs. Nothing changes until
+//     one is uncommented, and a second run finds them all mentioned.
 //   - Settings and data the new layout doesn't use are reported.
 func migratePlan(c *Ctx, args []string) (Plan, error) {
 	if len(args) > 0 {
@@ -56,6 +60,11 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 		}
 		p = append(p, Step{SetKey: "COMPOSE_PROFILES", SetValue: profiles})
 	}
+	if c.Env != nil {
+		if lines := newSettings(c, p); len(lines) > 0 {
+			p = append(p, Step{AppendEnv: lines})
+		}
+	}
 	for _, k := range sortedKeys(obsoleteKeys) {
 		if _, set := c.envGet(k); set {
 			note(k + " in .env is no longer used (" + obsoleteKeys[k] + "); you can delete it")
@@ -89,6 +98,64 @@ func migratePlan(c *Ctx, args []string) (Plan, error) {
 		note("nothing to migrate")
 	}
 	return p, nil
+}
+
+// newSettings returns what to append to .env: each sample.env setting it doesn't mention, commented
+// out, after the comment lines that describe it in sample.env; nil when there are none. Settings the
+// plan already sets are left out.
+func newSettings(c *Ctx, p Plan) []string {
+	b, err := os.ReadFile(filepath.Join(c.Dir, "sample.env"))
+	if err != nil {
+		return nil
+	}
+	planned := map[string]bool{}
+	for _, s := range p {
+		planned[s.SetKey] = true
+	}
+	var out, desc []string
+	descShown, afterKey := false, false
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		l := strings.TrimRight(sc.Text(), " \t")
+		key := ""
+		if m := envLineRe.FindStringSubmatch(l); m != nil {
+			key, l = m[1], "# "+strings.TrimSpace(l)
+		} else if m := commentedKeyRe.FindStringSubmatch(l); m != nil {
+			key = m[1]
+		}
+		switch {
+		case strings.TrimSpace(l) == "":
+			desc, descShown, afterKey = nil, false, false
+		case key == "":
+			// A description, unless it's only a rule of #s; a new one starts after a setting
+			if afterKey {
+				desc, descShown, afterKey = nil, false, false
+			}
+			if strings.Trim(l, "# ") != "" {
+				desc = append(desc, l)
+			}
+		default:
+			afterKey = true
+			if planned[key] || c.Env.Mentions(key) {
+				continue
+			}
+			if !descShown {
+				if len(out) > 0 {
+					out = append(out, "")
+				}
+				out = append(out, desc...)
+				descShown = true
+			}
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	head := []string{"", "###############################",
+		"## Added by sbd migrate (" + now().Format("2006-01-02") + "): settings this .env didn't list, from sample.env.",
+		"## All optional and commented out, so nothing changes: uncomment one to use it.", ""}
+	return append(head, out...)
 }
 
 // legacyPSArgs lists the running containers of the old layout, whose compose files lived in compose-files/.

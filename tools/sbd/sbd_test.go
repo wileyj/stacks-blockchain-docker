@@ -436,6 +436,35 @@ func TestDoctorHostAndDisk(t *testing.T) {
 	}
 }
 
+// sbd migrate lists the settings an upgraded .env never saw, commented out (owner, 2026-11-23)
+func TestMigrateAddsNewSettings(t *testing.T) {
+	sample := "NETWORK=mainnet\nCOMPOSE_PROFILES=node,api\n\n## Exposure: this host only\n# API_BIND_ADDR=127.0.0.1\n# RPC_BIND_ADDR=127.0.0.1\n" +
+		"\n###########\n## Proxy\n##\nPROXY_TLS=\n# PROXY_DOMAIN=api.example.org\n"
+	dir := project(t, "NETWORK=mainnet\n# RPC_BIND_ADDR=0.0.0.0\nPROXY_TLS=1\n")
+	os.WriteFile(filepath.Join(dir, "sample.env"), []byte(sample), 0o644)
+	_, out, _ := sbd(t, dir, &fakeDocker{}, "plan", "migrate")
+	if !strings.Contains(out, "append to .env, commented out (from sample.env): API_BIND_ADDR PROXY_DOMAIN\n") {
+		t.Errorf("plan: COMPOSE_PROFILES is set by the plan, RPC_BIND_ADDR and PROXY_TLS are already there:\n%s", out)
+	}
+	if code, _, errOut := sbd(t, dir, &fakeDocker{}, "migrate"); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	want := "NETWORK=mainnet\n# RPC_BIND_ADDR=0.0.0.0\nPROXY_TLS=1\nCOMPOSE_PROFILES=node,api\n\n###############################\n" +
+		"## Added by sbd migrate (2026-11-16): settings this .env didn't list, from sample.env.\n" +
+		"## All optional and commented out, so nothing changes: uncomment one to use it.\n\n" +
+		"## Exposure: this host only\n# API_BIND_ADDR=127.0.0.1\n\n## Proxy\n# PROXY_DOMAIN=api.example.org\n"
+	if string(b) != want {
+		t.Errorf(".env:\n%s\nwant:\n%s", b, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env.save")); err != nil {
+		t.Error("no .env.save")
+	}
+	if _, out, _ := sbd(t, dir, &fakeDocker{}, "plan", "migrate"); strings.Contains(out, "append to .env") {
+		t.Errorf("second run adds nothing:\n%s", out)
+	}
+}
+
 // sbd migrate stops a stack still running from the old layout, the node first (owner, 2026-11-18)
 func TestMigrateStopsTheOldStack(t *testing.T) {
 	dir := project(t, "NETWORK=testnet\nSTACKS_SHUTDOWN_TIMEOUT=900\n")

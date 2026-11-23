@@ -30,6 +30,22 @@ func LoadEnv(path string) (*Env, error) {
 	return &Env{Path: path, lines: lines}, nil
 }
 
+// commentedKeyRe matches a commented-out setting, as sample.env shows optional ones: `# KEY=value`.
+var commentedKeyRe = regexp.MustCompile(`^\s*#\s*([A-Z_][A-Z0-9_]*)=`)
+
+// Mentions reports whether key is in the file at all: set, or commented out.
+func (e *Env) Mentions(key string) bool {
+	for _, l := range e.lines {
+		if m := envLineRe.FindStringSubmatch(l); m != nil && m[1] == key {
+			return true
+		}
+		if m := commentedKeyRe.FindStringSubmatch(l); m != nil && m[1] == key {
+			return true
+		}
+	}
+	return false
+}
+
 // Get returns the value of the last assignment of key (as Compose does), and whether there is one.
 func (e *Env) Get(key string) (string, bool) {
 	val, ok := "", false

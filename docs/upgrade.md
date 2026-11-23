@@ -84,6 +84,9 @@ two changes, and `sbd migrate` makes them without moving any data (`sbd plan mig
   `docker compose run --rm config suggest --apply` carries your own settings over to
   `Config.overrides.toml`; if the node rejects one at the next start, edit or remove it there.
 
+It also appends the optional settings your `.env` doesn't list yet (from `sample.env`), commented
+out, so you can see what's available: nothing changes until you uncomment one.
+
 Stop a stack still running from the old layout before starting the new one; `sbd migrate` does this
 for you. Without `sbd`, stop it directly: the node first, with time to finish its run loop, then the
 rest of the old project:

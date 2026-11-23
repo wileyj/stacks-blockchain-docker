@@ -24,6 +24,7 @@ type Step struct {
 	Stdout    string   `json:"stdout,omitempty"`     // redirect docker's stdout to this file (relative to the project)
 	Gzip      bool     `json:"gzip,omitempty"`       // gzip the redirected output
 	List      string   `json:"list,omitempty"`       // list this directory's files and sizes (ls -lh)
+	AppendEnv []string `json:"append_env,omitempty"` // append these lines to .env (commented-out settings)
 	Note      string   `json:"note,omitempty"`       // information for the user; changes nothing
 }
 
@@ -40,6 +41,14 @@ func (s Step) String() string {
 		return fmt.Sprintf("edit .env: %s=%s", s.SetKey, shown(s.SetKey, s.SetValue))
 	case s.List != "":
 		return "ls -lh " + shellQuote(s.List)
+	case len(s.AppendEnv) > 0:
+		var keys []string
+		for _, l := range s.AppendEnv {
+			if m := commentedKeyRe.FindStringSubmatch(l); m != nil {
+				keys = append(keys, m[1])
+			}
+		}
+		return fmt.Sprintf("append to .env, commented out (from sample.env): %s", strings.Join(keys, " "))
 	}
 	parts := []string{"docker"}
 	for _, a := range s.Docker {
@@ -131,6 +140,17 @@ func (p Plan) Execute(dir string, d Docker) (int, error) {
 			if err := listFiles(projectPath(dir, s.List)); err != nil {
 				return 1, err
 			}
+		case len(s.AppendEnv) > 0:
+			env, err := LoadEnv(filepath.Join(dir, ".env"))
+			if err != nil {
+				return 1, err
+			}
+			env.lines = append(env.lines, s.AppendEnv...)
+			if err := env.Save(!backedUp); err != nil {
+				return 1, err
+			}
+			backedUp = true
+			fmt.Fprintln(os.Stderr, "sbd: .env: added the settings it didn't list yet, commented out (previous .env in .env.save)")
 		default:
 			out := io.Writer(os.Stdout)
 			if s.Stdout != "" {
