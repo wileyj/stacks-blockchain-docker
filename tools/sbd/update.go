@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -16,8 +17,8 @@ import (
 // is `sbd db upgrade`.
 
 func init() {
-	Commands = append(Commands, &Command{Name: "update", Usage: "update <stacks-blockchain|stacks-blockchain-api|stacks-signer|proxy> [--version V] (or node, api, signer)",
-		Help: "Pull and recreate one service, the others keep running (--version sets its pin in .env first)",
+	Commands = append(Commands, &Command{Name: "update", Usage: "update <stacks-blockchain|stacks-blockchain-api|stacks-signer|proxy> [--version V] (or node, api, signer) | update --all",
+		Help: "Pull and recreate one service, the others keep running (--version sets its pin in .env first); --all takes sample.env's versions and restarts",
 		Plan: updatePlan, Guard: updateGuard})
 }
 
@@ -54,9 +55,16 @@ var imageTagRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$`)
 func updatePlan(c *Ctx, args []string) (Plan, error) {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	version := fs.String("version", "", "")
+	all := fs.Bool("all", false, "")
 	pos, err := parseFlags(fs, args)
 	if err != nil {
 		return nil, err
+	}
+	if *all {
+		if len(pos) > 0 || *version != "" {
+			return nil, usagef("usage: sbd update --all (no service or --version: it takes the versions in sample.env)")
+		}
+		return updateAllPlan(c)
 	}
 	var services []string
 	for _, u := range updatables {
@@ -94,12 +102,49 @@ func updatePlan(c *Ctx, args []string) (Plan, error) {
 		compose("up", "-d", "--no-deps", "--force-recreate", u.service)), nil
 }
 
+// updateAllPlan moves the image pins in .env up to sample.env's (owner, 2026-11-23): after a git pull,
+// sample.env has the versions this repo release was tested with, so this is "update to the latest
+// tested". sbd looks nothing up online. A pin newer than sample.env's is kept, and POSTGRES_VERSION is
+// left out (a new major is sbd db upgrade). Then pull and restart the whole stack, node first.
+func updateAllPlan(c *Ctx) (Plan, error) {
+	sample, err := LoadEnv(filepath.Join(c.Dir, "sample.env"))
+	if err != nil {
+		return nil, err
+	}
+	var p Plan
+	for _, k := range sample.Keys() {
+		want, _ := sample.Get(k)
+		if !strings.HasSuffix(k, "_VERSION") || k == "POSTGRES_VERSION" || want == "" {
+			continue
+		}
+		have := c.Value(k)
+		switch {
+		case have == want:
+		case newer(have, want):
+			p = append(p, Step{Note: fmt.Sprintf("keeping %s=%s, newer than sample.env's %s", k, have, want)})
+		default:
+			p = append(p, Step{Note: fmt.Sprintf("%s %s -> %s", k, orDefault(have, "(unset)"), want)}, Step{SetKey: k, SetValue: want})
+		}
+	}
+	if !slices.ContainsFunc(p, func(s Step) bool { return s.SetKey != "" }) {
+		return append(p, Step{Note: "the versions already match sample.env: nothing to update (git pull for a newer sample.env)"}), nil
+	}
+	start, err := startPlan(c, nil)
+	if err != nil {
+		return nil, err
+	}
+	p = append(p, Step{Note: "the node stops (up to STACKS_SHUTDOWN_TIMEOUT); the node and the API migrate their data on start"},
+		compose("pull", "--ignore-buildable"), stopStep)
+	return append(p, start...), nil
+}
+
 // updateGuard: on a stopped stack, `up --no-deps` would start that one service alone.
 func updateGuard(c *Ctx, args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.String("version", "", "")
+	all := fs.Bool("all", false, "")
 	pos, err := parseFlags(fs, args)
-	if err != nil || len(pos) != 1 {
+	if err != nil || len(pos) != 1 || *all {
 		return err // the plan already refused bad arguments
 	}
 	_, u, _ := lookupUpdatable(pos[0])

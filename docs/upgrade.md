@@ -20,6 +20,10 @@ docker compose up -d
 # sbd: sbd pull && sbd restart
 ```
 
+To move to the versions this repo was tested with, `git pull`, then `sbd update --all`: it sets the
+version pins in `.env` to those in `sample.env` (keeping any you've set newer, and leaving
+`POSTGRES_VERSION` alone), pulls and restarts. `sbd plan update --all` shows the changes first.
+
 ## One service
 
 To update the API or the signer without stopping the rest (they get releases more often than the

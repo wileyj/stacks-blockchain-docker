@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,5 +71,31 @@ func TestNewer(t *testing.T) {
 		if got := newer(tc.a, tc.b); got != tc.want {
 			t.Errorf("newer(%s, %s) = %v", tc.a, tc.b, got)
 		}
+	}
+}
+
+// sbd update --all takes sample.env's versions (owner, 2026-11-23)
+func TestUpdateAll(t *testing.T) {
+	sample := sampleEnv + "STACKS_BLOCKCHAIN_VERSION=4.0.7\nSTACKS_SIGNER_VERSION=4.0.7\nSTACKS_BLOCKCHAIN_API_VERSION=9.10.0\nPOSTGRES_VERSION=18\n# CADDY_VERSION=2.11.9-alpine\n"
+	dir := project(t, "NETWORK=mainnet\nCOMPOSE_PROFILES=node,api\nSTACKS_BLOCKCHAIN_VERSION=4.0.1\nSTACKS_SIGNER_VERSION=4.0.1\n"+
+		"STACKS_BLOCKCHAIN_API_VERSION=9.11.0\nPOSTGRES_VERSION=17\n")
+	os.WriteFile(filepath.Join(dir, "sample.env"), []byte(sample), 0o644)
+	code, out, errOut := sbd(t, dir, &fakeDocker{}, "plan", "update", "--all")
+	want := "# STACKS_BLOCKCHAIN_VERSION 4.0.1 -> 4.0.7\nedit .env: STACKS_BLOCKCHAIN_VERSION=4.0.7\n" +
+		"# STACKS_SIGNER_VERSION 4.0.1 -> 4.0.7\nedit .env: STACKS_SIGNER_VERSION=4.0.7\n" +
+		"# keeping STACKS_BLOCKCHAIN_API_VERSION=9.11.0, newer than sample.env's 9.10.0\n" +
+		"# the node stops (up to STACKS_SHUTDOWN_TIMEOUT); the node and the API migrate their data on start\n" +
+		"docker compose pull --ignore-buildable\n"
+	if code != 0 || !strings.HasPrefix(out, want) || !strings.HasSuffix(out, "docker compose up -d\n") || strings.Contains(out, "POSTGRES") {
+		t.Fatalf("exit %d %s\n%s", code, errOut, out)
+	}
+	if code, _, errOut := sbd(t, dir, &fakeDocker{}, "update", "--all"); code != 0 {
+		t.Fatalf("exit %d %s", code, errOut)
+	}
+	if _, out, _ := sbd(t, dir, &fakeDocker{}, "plan", "update", "--all"); !strings.Contains(out, "nothing to update") || strings.Contains(out, "docker") {
+		t.Errorf("second run:\n%s", out)
+	}
+	if code, _, errOut := sbd(t, dir, &fakeDocker{}, "plan", "update", "--all", "api"); code != 2 || !strings.Contains(errOut, "usage: sbd update --all") {
+		t.Errorf("--all with a service: exit %d %q", code, errOut)
 	}
 }

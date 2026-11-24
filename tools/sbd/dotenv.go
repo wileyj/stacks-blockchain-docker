@@ -46,6 +46,19 @@ func (e *Env) Mentions(key string) bool {
 	return false
 }
 
+// Keys returns the keys assigned in the file, in order, each once.
+func (e *Env) Keys() []string {
+	var keys []string
+	seen := map[string]bool{}
+	for _, l := range e.lines {
+		if m := envLineRe.FindStringSubmatch(l); m != nil && !seen[m[1]] {
+			seen[m[1]] = true
+			keys = append(keys, m[1])
+		}
+	}
+	return keys
+}
+
 // Get returns the value of the last assignment of key (as Compose does), and whether there is one.
 func (e *Env) Get(key string) (string, bool) {
 	val, ok := "", false
