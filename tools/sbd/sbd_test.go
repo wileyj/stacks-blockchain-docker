@@ -341,7 +341,7 @@ func TestPlansAreDocumented(t *testing.T) {
 // An install from before the compose-first layout: no COMPOSE_PROFILES, an event-replay setting, a
 // hand-edited Config.toml with the signer on, and an event-replay data dir.
 func TestMigrate(t *testing.T) {
-	dir := project(t, "NETWORK=mainnet\nSIGNER_PRIVATE_KEY=ab01\nSTACKS_EXPORT_EVENTS_FILE=/tmp/events.tsv\nEXPOSE_POSTGRES=true\n")
+	dir := project(t, "VERBOSE=false\nNETWORK=mainnet\nSIGNER_PRIVATE_KEY=ab01\nSTACKS_EXPORT_EVENTS_FILE=/tmp/events.tsv\nEXPOSE_POSTGRES=true\n")
 	os.MkdirAll(filepath.Join(dir, "conf", "mainnet"), 0o755)
 	os.WriteFile(filepath.Join(dir, "conf", "mainnet", "Config.toml"), []byte("[node]\n# stacker = false\nstacker = true\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "persistent-data", "mainnet", "event-replay"), 0o755)
@@ -352,6 +352,7 @@ func TestMigrate(t *testing.T) {
 	for _, want := range []string{
 		"edit .env: COMPOSE_PROFILES=node,api,signer\n",
 		"# STACKS_EXPORT_EVENTS_FILE in .env is no longer used",
+		"# VERBOSE in .env is no longer used (manage.sh's output switch",
 		"# EXPOSE_POSTGRES in .env is no longer used (use POSTGRES_LOCAL=1",
 		"edit .env: API_BIND_ADDR=0.0.0.0\n", "edit .env: RPC_BIND_ADDR=0.0.0.0\n", "keeping that",
 		"docker compose run --rm config suggest --apply\n",

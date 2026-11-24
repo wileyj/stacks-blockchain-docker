@@ -183,6 +183,7 @@ var obsoleteKeys = map[string]string{
 	"METRICS_BIND_ADDR":         "metrics are published on 127.0.0.1 only; use an SSH tunnel from elsewhere",
 	"MONITORING_BIND":           "Prometheus and Grafana are published on 127.0.0.1 only; use an SSH tunnel from elsewhere",
 	"NGINX_PROXY_PORT":          "the proxy is Caddy now: set PROXY_HTTP_PORT instead",
+	"VERBOSE":                   "manage.sh's output switch; sbd and Compose don't read it",
 }
 
 // envGet reads .env only (not the sample.env fallback): whether a setting is really there.
